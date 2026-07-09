@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { Toaster } from 'react-hot-toast';
 import MainLayout from './layouts/MainLayout';
 import HomePage from './pages/HomePage';
 import AnalysisPage from './pages/AnalysisPage';
@@ -12,6 +13,18 @@ import RegisterPage from './pages/RegisterPage';
 function App() {
   return (
     <BrowserRouter>
+      <Toaster
+        position="top-right"
+        toastOptions={{
+          style: {
+            background: '#1e293b',
+            color: '#e2e8f0',
+            border: '1px solid #334155',
+          },
+          success: { iconTheme: { primary: '#22c55e', secondary: '#1e293b' } },
+          error: { iconTheme: { primary: '#ef4444', secondary: '#1e293b' } },
+        }}
+      />
       <Routes>
         <Route element={<MainLayout />}>
           <Route path="/" element={<HomePage />} />

@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from 'recharts';
+import toast from 'react-hot-toast';
 import api from '../lib/api';
+import { useAuthStore } from '../store/authStore';
 import { Card, VerdictBadge, MetricRow } from '../components/ui';
 
 const TABS = [
@@ -14,13 +16,76 @@ const TABS = [
   { key: 'predictions', label: 'Predictions' },
 ];
 
+function AddToPortfolioForm({ onAdd, onCancel }) {
+  const [weight, setWeight] = useState('');
+  const [value, setValue] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!weight || !value) return;
+    setSubmitting(true);
+    try {
+      await onAdd({ weight: Number(weight), value: Number(value) });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="flex flex-wrap items-end gap-2">
+      <div>
+        <label className="block text-xs text-slate-500 mb-1">Тегло %</label>
+        <input
+          type="number"
+          min="0"
+          max="100"
+          value={weight}
+          onChange={(e) => setWeight(e.target.value)}
+          placeholder="20"
+          className="w-20 bg-slate-900 border border-slate-700 rounded-lg py-1.5 px-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+      </div>
+      <div>
+        <label className="block text-xs text-slate-500 mb-1">Стойност $</label>
+        <input
+          type="number"
+          min="0"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          placeholder="10000"
+          className="w-28 bg-slate-900 border border-slate-700 rounded-lg py-1.5 px-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+      </div>
+      <button
+        type="submit"
+        disabled={submitting}
+        className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-60 text-white text-sm font-medium transition-colors"
+      >
+        {submitting ? 'Добавяне...' : 'Потвърди'}
+      </button>
+      <button
+        type="button"
+        onClick={onCancel}
+        className="px-3 py-1.5 rounded-lg border border-slate-700 text-slate-400 hover:text-white text-sm transition-colors"
+      >
+        Отказ
+      </button>
+    </form>
+  );
+}
+
 export default function AnalysisPage() {
   const { symbol } = useParams();
+  const navigate = useNavigate();
+  const token = useAuthStore((s) => s.token);
   const sym = (symbol || '').toUpperCase();
   const [stock, setStock] = useState(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [tab, setTab] = useState('overview');
+  const [addingToWatchlist, setAddingToWatchlist] = useState(false);
+  const [showPortfolioForm, setShowPortfolioForm] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -44,6 +109,36 @@ export default function AnalysisPage() {
       cancelled = true;
     };
   }, [sym]);
+
+  const requireAuth = () => {
+    if (token) return true;
+    toast.error('Влез в акаунта си, за да продължиш.');
+    navigate('/login');
+    return false;
+  };
+
+  const handleAddToWatchlist = async () => {
+    if (!requireAuth()) return;
+    setAddingToWatchlist(true);
+    try {
+      await api.post('/watchlist', { symbol: sym });
+      toast.success(`${sym} добавен в Watchlist`);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Неуспешно добавяне в Watchlist.');
+    } finally {
+      setAddingToWatchlist(false);
+    }
+  };
+
+  const handleAddToPortfolio = async ({ weight, value }) => {
+    try {
+      await api.post('/portfolio', { symbol: sym, weight, value });
+      toast.success(`${sym} добавен в Портфолио`);
+      setShowPortfolioForm(false);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Неуспешно добавяне в Портфолио.');
+    }
+  };
 
   if (loading) {
     return (
@@ -97,6 +192,34 @@ export default function AnalysisPage() {
             <VerdictBadge verdict={stock.verdict} className="text-sm px-4 py-2" />
           </div>
         </div>
+
+        {/* Watchlist / Portfolio actions */}
+        <Card className="mb-6">
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              onClick={handleAddToWatchlist}
+              disabled={addingToWatchlist}
+              className="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 disabled:opacity-60 text-white text-sm font-medium transition-colors"
+            >
+              {addingToWatchlist ? 'Добавяне...' : '+ Watchlist'}
+            </button>
+
+            {!showPortfolioForm && (
+              <button
+                onClick={() => {
+                  if (requireAuth()) setShowPortfolioForm(true);
+                }}
+                className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium transition-colors"
+              >
+                + Portfolio
+              </button>
+            )}
+
+            {showPortfolioForm && (
+              <AddToPortfolioForm onAdd={handleAddToPortfolio} onCancel={() => setShowPortfolioForm(false)} />
+            )}
+          </div>
+        </Card>
 
         {/* XAI Explanation */}
         <Card className="mb-6">
