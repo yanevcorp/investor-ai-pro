@@ -2,6 +2,7 @@ const Stock = require('../models/Stock');
 const finnhubService = require('../services/finnhubService');
 const alphaVantageService = require('../services/alphaVantageService');
 const newsService = require('../services/newsService');
+const { buildGenericAnalysis } = require('../utils/buildAnalysis');
 
 function avNumber(value) {
   if (value === undefined || value === null || value === 'None' || value === '-') return null;
@@ -82,6 +83,56 @@ async function getFundamentals(stock) {
   }
 }
 
+function deriveVerdict(changePercent) {
+  if (changePercent >= 10) return 'STRONG BUY';
+  if (changePercent >= 2) return 'BUY';
+  if (changePercent > -2) return 'HOLD';
+  if (changePercent > -10) return 'SELL';
+  return 'STRONG SELL';
+}
+
+function deriveAiScore(changePercent) {
+  return Math.max(0, Math.min(100, Math.round(50 + changePercent * 2)));
+}
+
+// Any ticker not already in Mongo is looked up live via Finnhub. A
+// successful quote (non-zero price) is treated as proof it's a real,
+// tradable symbol, and gets persisted so it behaves like a seeded stock
+// from then on (fundamentals caching, watchlist/portfolio references,
+// future search hits, etc.). Verdict/aiScore/analysis are heuristic —
+// there's no genuine AI thesis behind them, same as the seeded stocks.
+async function provisionStock(symbol) {
+  let quote;
+  try {
+    quote = await finnhubService.getQuote(symbol);
+  } catch (err) {
+    return null;
+  }
+
+  let profile = null;
+  try {
+    profile = await finnhubService.getProfile(symbol);
+  } catch (err) {
+    // Profile is a nice-to-have — the quote alone already confirms this
+    // is a real symbol.
+  }
+
+  const verdict = deriveVerdict(quote.changePercent);
+  const positive = verdict === 'STRONG BUY' || verdict === 'BUY';
+
+  return Stock.create({
+    symbol,
+    name: profile?.name || symbol,
+    sector: profile?.sector || '',
+    price: quote.price,
+    change: quote.change,
+    changePercent: quote.changePercent,
+    verdict,
+    aiScore: deriveAiScore(quote.changePercent),
+    analysis: buildGenericAnalysis(positive),
+  });
+}
+
 async function listStocks(req, res, next) {
   try {
     const { sector, verdict, search } = req.query;
@@ -92,18 +143,29 @@ async function listStocks(req, res, next) {
       filter.$or = [{ symbol: new RegExp(search, 'i') }, { name: new RegExp(search, 'i') }];
     }
 
-    const stocks = await Stock.find(filter).select('-analysis').sort('symbol');
+    let stocks = await Stock.find(filter).select('-analysis').sort('symbol');
+
+    // No local match on what looks like a bare ticker (e.g. "KTOS")?
+    // Try discovering it live instead of returning an empty result.
+    if (search && stocks.length === 0) {
+      const candidate = search.trim().toUpperCase();
+      if (/^[A-Z.]{1,6}$/.test(candidate)) {
+        const provisioned = await provisionStock(candidate);
+        if (provisioned) stocks = [provisioned];
+      }
+    }
 
     const withLiveQuotes = await Promise.all(
-      stocks.map(async (stock) => {
-        const obj = stock.toObject();
+      stocks.map(async (stockDoc) => {
+        const obj = typeof stockDoc.toObject === 'function' ? stockDoc.toObject() : stockDoc;
+        delete obj.analysis;
         try {
-          const quote = await finnhubService.getQuote(stock.symbol);
+          const quote = await finnhubService.getQuote(obj.symbol);
           obj.price = quote.price;
           obj.change = quote.change;
           obj.changePercent = quote.changePercent;
         } catch (err) {
-          // Finnhub unavailable/rate-limited — keep the seeded fallback values
+          // Finnhub unavailable/rate-limited — keep the seeded/provisioned fallback values
         }
         return obj;
       })
@@ -118,9 +180,13 @@ async function listStocks(req, res, next) {
 async function getStock(req, res, next) {
   try {
     const symbol = req.params.symbol.toUpperCase();
-    const stock = await Stock.findOne({ symbol });
+    let stock = await Stock.findOne({ symbol });
+
     if (!stock) {
-      return res.status(404).json({ message: `Stock ${symbol} not found` });
+      stock = await provisionStock(symbol);
+      if (!stock) {
+        return res.status(404).json({ message: `Stock ${symbol} not found` });
+      }
     }
 
     const obj = stock.toObject();
@@ -131,7 +197,7 @@ async function getStock(req, res, next) {
       obj.change = quote.change;
       obj.changePercent = quote.changePercent;
     } catch (err) {
-      // keep seeded fallback
+      // keep seeded/provisioned fallback
     }
 
     try {
@@ -139,7 +205,7 @@ async function getStock(req, res, next) {
       obj.name = profile.name || obj.name;
       obj.sector = profile.sector || obj.sector;
     } catch (err) {
-      // keep seeded fallback
+      // keep seeded/provisioned fallback
     }
 
     const fundamentals = await getFundamentals(stock);
