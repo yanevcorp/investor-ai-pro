@@ -25,6 +25,11 @@ const stockSchema = new mongoose.Schema(
     // shape mirrors the frontend's analysisDetails so the API can be
     // consumed directly without a transform layer.
     analysis: { type: mongoose.Schema.Types.Mixed, default: {} },
+    // Raw Alpha Vantage OVERVIEW response, cached here permanently after
+    // the first fetch per symbol — their free tier allows only 25
+    // requests/day, so this must not be re-fetched on every request.
+    fundamentals: { type: mongoose.Schema.Types.Mixed, default: null },
+    fundamentalsFetchedAt: { type: Date, default: null },
   },
   { timestamps: true }
 );

@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from 'recharts';
 import toast from 'react-hot-toast';
 import api from '../lib/api';
+import { timeAgo } from '../utils/time';
 import { Card, VerdictBadge, MetricRow } from '../components/ui';
 
 const TABS = [
@@ -271,6 +272,29 @@ export default function AnalysisPage() {
             <MetricRow key={i} label={metric.label} value={metric.value} good={metric.good} />
           ))}
         </Card>
+
+        {tab === 'sentiment' && details.news && details.news.length > 0 && (
+          <Card className="mt-6">
+            <h2 className="text-lg font-semibold text-white mb-4">Скорошни новини</h2>
+            <div className="space-y-3">
+              {details.news.map((article, i) => (
+                <a
+                  key={i}
+                  href={article.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block bg-slate-900/50 hover:bg-slate-900 rounded-lg px-4 py-3 transition-colors"
+                >
+                  <div className="flex items-center justify-between gap-3 mb-1">
+                    <span className="text-xs text-blue-400 font-medium">{article.source}</span>
+                    <span className="text-xs text-slate-500">{timeAgo(article.publishedAt)}</span>
+                  </div>
+                  <h3 className="text-sm text-slate-200 font-medium">{article.title}</h3>
+                </a>
+              ))}
+            </div>
+          </Card>
+        )}
       </div>
     </div>
   );
