@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { quickSuggestions, stocks } from '../data/mockData';
+
+const QUICK_SUGGESTIONS = ['RKLB', 'PLTR', 'MSTR', 'AAPL', 'TSLA'];
 
 export default function HomePage() {
   const navigate = useNavigate();
@@ -9,14 +10,13 @@ export default function HomePage() {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    const trimmed = query.trim().toUpperCase();
-    if (tab === 'ticker' && stocks[trimmed]) {
-      navigate(`/analysis/${trimmed}`);
+    const trimmed = query.trim();
+    if (!trimmed) return;
+    if (tab === 'ticker') {
+      navigate(`/analysis/${trimmed.toUpperCase()}`);
       return;
     }
-    if (tab === 'nl' && trimmed) {
-      navigate('/screener', { state: { query } });
-    }
+    navigate('/screener', { state: { query: trimmed } });
   };
 
   return (
@@ -69,7 +69,7 @@ export default function HomePage() {
 
         <div className="flex flex-wrap items-center justify-center gap-2 mb-16">
           <span className="text-sm text-slate-500 mr-1">Бързи предложения:</span>
-          {quickSuggestions.map((sym) => (
+          {QUICK_SUGGESTIONS.map((sym) => (
             <button
               key={sym}
               onClick={() => navigate(`/analysis/${sym}`)}

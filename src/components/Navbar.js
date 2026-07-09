@@ -1,5 +1,5 @@
-import { NavLink } from 'react-router-dom';
-import { currentUser } from '../data/mockData';
+import { NavLink, useNavigate } from 'react-router-dom';
+import { useAuthStore } from '../store/authStore';
 
 const links = [
   { to: '/', label: 'Home' },
@@ -10,6 +10,21 @@ const links = [
 ];
 
 export default function Navbar() {
+  const navigate = useNavigate();
+  const user = useAuthStore((s) => s.user);
+  const logout = useAuthStore((s) => s.logout);
+
+  const handleAvatarClick = () => {
+    if (user) {
+      logout();
+      navigate('/');
+    } else {
+      navigate('/login');
+    }
+  };
+
+  const initials = user?.username ? user.username.slice(0, 2).toUpperCase() : null;
+
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 h-16 bg-slate-900/90 backdrop-blur border-b border-slate-800">
       <div className="max-w-7xl mx-auto h-full px-4 flex items-center justify-between">
@@ -37,13 +52,13 @@ export default function Navbar() {
           ))}
         </div>
 
-        <NavLink
-          to="/login"
+        <button
+          onClick={handleAvatarClick}
           className="flex items-center justify-center w-9 h-9 rounded-full bg-blue-600 text-white text-sm font-semibold hover:bg-blue-500 transition-colors shrink-0"
-          title={currentUser.email}
+          title={user ? `${user.username} (${user.email}) — кликни за изход` : 'Вход'}
         >
-          {currentUser.initials}
-        </NavLink>
+          {initials || '👤'}
+        </button>
       </div>
     </nav>
   );

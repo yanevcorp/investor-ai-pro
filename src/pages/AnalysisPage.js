@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from 'recharts';
-import { stocks, analysisDetails } from '../data/mockData';
+import api from '../lib/api';
 import { Card, VerdictBadge, MetricRow } from '../components/ui';
 
 const TABS = [
@@ -17,11 +17,43 @@ const TABS = [
 export default function AnalysisPage() {
   const { symbol } = useParams();
   const sym = (symbol || '').toUpperCase();
-  const stock = stocks[sym];
-  const details = analysisDetails[sym];
+  const [stock, setStock] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [notFound, setNotFound] = useState(false);
   const [tab, setTab] = useState('overview');
 
-  if (!stock || !details) {
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setNotFound(false);
+    setStock(null);
+
+    api
+      .get(`/stocks/${sym}`)
+      .then((res) => {
+        if (!cancelled) setStock(res.data.stock);
+      })
+      .catch(() => {
+        if (!cancelled) setNotFound(true);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [sym]);
+
+  if (loading) {
+    return (
+      <div className="min-h-[calc(100vh-4rem)] pt-24 px-4 flex flex-col items-center text-center text-slate-500">
+        Зареждане на анализ за {sym}...
+      </div>
+    );
+  }
+
+  if (notFound || !stock) {
     return (
       <div className="min-h-[calc(100vh-4rem)] pt-24 px-4 flex flex-col items-center text-center">
         <div className="text-5xl mb-4">🔍</div>
@@ -34,12 +66,13 @@ export default function AnalysisPage() {
     );
   }
 
+  const details = stock.analysis || {};
   const isPositive = stock.change >= 0;
   const probabilityData = ['1W', '1M', '3M'].map((period) => ({
     period,
-    UP: details.probability[period].up,
-    FLAT: details.probability[period].flat,
-    DOWN: details.probability[period].down,
+    UP: details.probability?.[period]?.up ?? 0,
+    FLAT: details.probability?.[period]?.flat ?? 0,
+    DOWN: details.probability?.[period]?.down ?? 0,
   }));
 
   return (
@@ -72,7 +105,7 @@ export default function AnalysisPage() {
           </h2>
           <p className="text-sm text-slate-500 mb-4">AI Score: {stock.aiScore}/100 — базирано на претеглена комбинация от фактори</p>
           <div className="space-y-2">
-            {details.xaiReasons.map((reason, i) => (
+            {(details.xaiReasons || []).map((reason, i) => (
               <div key={i} className="flex items-center justify-between gap-4 bg-slate-900/50 rounded-lg px-4 py-2.5">
                 <span className="text-sm text-slate-300 flex items-center gap-2">
                   <span>{reason.positive ? '✅' : '❌'}</span>

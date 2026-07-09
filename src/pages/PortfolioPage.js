@@ -1,5 +1,8 @@
-import { useState } from 'react';
-import { portfolioHoldings, stressTestScenarios, hiddenRisks, correlationMatrix } from '../data/mockData';
+import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import api from '../lib/api';
+import { useAuthStore } from '../store/authStore';
+import { stressTestScenarios, hiddenRisks, correlationMatrix } from '../data/mockData';
 import { Card } from '../components/ui';
 
 function corrColor(value) {
@@ -16,10 +19,121 @@ const severityStyles = {
   Low: 'border-blue-500/30 bg-blue-500/5',
 };
 
+function AddHoldingForm({ onAdd }) {
+  const [symbol, setSymbol] = useState('');
+  const [weight, setWeight] = useState('');
+  const [value, setValue] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!symbol || !weight || !value) return;
+    setSubmitting(true);
+    try {
+      await onAdd({ symbol, weight: Number(weight), value: Number(value) });
+      setSymbol('');
+      setWeight('');
+      setValue('');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="flex flex-wrap items-end gap-3 mb-5">
+      <div>
+        <label className="block text-xs text-slate-500 mb-1">Символ</label>
+        <input
+          value={symbol}
+          onChange={(e) => setSymbol(e.target.value)}
+          placeholder="AAPL"
+          className="w-24 bg-slate-900 border border-slate-700 rounded-lg py-2 px-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+      </div>
+      <div>
+        <label className="block text-xs text-slate-500 mb-1">Тегло %</label>
+        <input
+          type="number"
+          min="0"
+          max="100"
+          value={weight}
+          onChange={(e) => setWeight(e.target.value)}
+          placeholder="20"
+          className="w-24 bg-slate-900 border border-slate-700 rounded-lg py-2 px-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+      </div>
+      <div>
+        <label className="block text-xs text-slate-500 mb-1">Стойност $</label>
+        <input
+          type="number"
+          min="0"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          placeholder="10000"
+          className="w-32 bg-slate-900 border border-slate-700 rounded-lg py-2 px-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+      </div>
+      <button
+        type="submit"
+        disabled={submitting}
+        className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-60 text-white text-sm font-medium transition-colors"
+      >
+        {submitting ? 'Добавяне...' : '+ Добави'}
+      </button>
+    </form>
+  );
+}
+
 export default function PortfolioPage() {
+  const token = useAuthStore((s) => s.token);
+  const [holdings, setHoldings] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [activeScenario, setActiveScenario] = useState(stressTestScenarios[0].id);
   const scenario = stressTestScenarios.find((s) => s.id === activeScenario);
-  const totalValue = portfolioHoldings.reduce((sum, h) => sum + h.value, 0);
+
+  const loadPortfolio = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const res = await api.get('/portfolio');
+      setHoldings(res.data.portfolio.holdings);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Неуспешно зареждане на портфолиото.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (token) loadPortfolio();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
+
+  const handleAdd = async ({ symbol, weight, value }) => {
+    const res = await api.post('/portfolio', { symbol, weight, value });
+    setHoldings(res.data.portfolio.holdings);
+  };
+
+  const handleDelete = async (holdingId) => {
+    const res = await api.delete(`/portfolio/${holdingId}`);
+    setHoldings(res.data.portfolio.holdings);
+  };
+
+  const totalValue = holdings.reduce((sum, h) => sum + h.value, 0);
+
+  if (!token) {
+    return (
+      <div className="min-h-[calc(100vh-4rem)] pt-24 px-4 flex flex-col items-center text-center">
+        <div className="text-5xl mb-4">🔒</div>
+        <h2 className="text-xl font-semibold text-white mb-2">Влез в акаунта си</h2>
+        <p className="text-slate-400 mb-6">Портфолиото е достъпно само за логнати потребители.</p>
+        <Link to="/login" className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium">
+          Вход
+        </Link>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-[calc(100vh-4rem)] pt-20 px-4 pb-16">
@@ -35,18 +149,35 @@ export default function PortfolioPage() {
         {/* Holdings */}
         <Card className="mb-6">
           <h2 className="text-lg font-semibold text-white mb-4">Позиции</h2>
-          <div className="space-y-3">
-            {portfolioHoldings.map((h) => (
-              <div key={h.symbol} className="flex items-center gap-4">
-                <span className="w-16 text-sm font-semibold text-white">{h.symbol}</span>
-                <div className="flex-1 h-2 rounded-full bg-slate-700 overflow-hidden">
-                  <div className="h-full bg-blue-500 rounded-full" style={{ width: `${h.weight}%` }} />
+
+          <AddHoldingForm onAdd={handleAdd} />
+
+          {error && <p className="text-sm text-red-400 mb-4">{error}</p>}
+          {loading ? (
+            <p className="text-sm text-slate-500">Зареждане...</p>
+          ) : holdings.length === 0 ? (
+            <p className="text-sm text-slate-500">Все още нямаш добавени позиции.</p>
+          ) : (
+            <div className="space-y-3">
+              {holdings.map((h) => (
+                <div key={h._id} className="flex items-center gap-4">
+                  <span className="w-16 text-sm font-semibold text-white">{h.symbol}</span>
+                  <div className="flex-1 h-2 rounded-full bg-slate-700 overflow-hidden">
+                    <div className="h-full bg-blue-500 rounded-full" style={{ width: `${h.weight}%` }} />
+                  </div>
+                  <span className="w-12 text-right text-sm text-slate-400">{h.weight}%</span>
+                  <span className="w-24 text-right text-sm text-slate-300">${h.value.toLocaleString()}</span>
+                  <button
+                    onClick={() => handleDelete(h._id)}
+                    className="text-slate-500 hover:text-red-400 text-sm transition-colors"
+                    title="Премахни"
+                  >
+                    ✕
+                  </button>
                 </div>
-                <span className="w-12 text-right text-sm text-slate-400">{h.weight}%</span>
-                <span className="w-24 text-right text-sm text-slate-300">${h.value.toLocaleString()}</span>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </Card>
 
         {/* Stress test */}

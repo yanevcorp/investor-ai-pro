@@ -1,14 +1,29 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import api from '../lib/api';
+import { useAuthStore } from '../store/authStore';
 
 export default function LoginPage() {
   const navigate = useNavigate();
+  const setAuth = useAuthStore((s) => s.setAuth);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    navigate('/');
+    setError('');
+    setLoading(true);
+    try {
+      const res = await api.post('/auth/login', { email, password });
+      setAuth(res.data.token, res.data.user);
+      navigate('/');
+    } catch (err) {
+      setError(err.response?.data?.message || 'Възникна грешка при вход. Опитай отново.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -48,11 +63,14 @@ export default function LoginPage() {
                 className="w-full bg-slate-900 border border-slate-700 rounded-lg py-2.5 px-3.5 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
+            {error && <p className="text-sm text-red-400">{error}</p>}
+
             <button
               type="submit"
-              className="w-full py-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium transition-colors"
+              disabled={loading}
+              className="w-full py-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-60 disabled:cursor-not-allowed text-white font-medium transition-colors"
             >
-              Вход
+              {loading ? 'Влизане...' : 'Вход'}
             </button>
           </form>
         </div>

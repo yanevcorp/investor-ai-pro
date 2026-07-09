@@ -1,6 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { alerts } from '../data/mockData';
+import api from '../lib/api';
+import { useAuthStore } from '../store/authStore';
+import { timeAgo } from '../utils/time';
 import { Card, PriorityBadge } from '../components/ui';
 
 const PRIORITY_ORDER = { High: 0, Medium: 1, Low: 2 };
@@ -14,7 +16,40 @@ const typeIcons = {
 };
 
 export default function AlertsPage() {
+  const token = useAuthStore((s) => s.token);
+  const [alerts, setAlerts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [filter, setFilter] = useState('All');
+
+  useEffect(() => {
+    if (!token) return;
+    setLoading(true);
+    setError('');
+    api
+      .get('/alerts')
+      .then((res) => setAlerts(res.data.alerts))
+      .catch((err) => setError(err.response?.data?.message || 'Неуспешно зареждане на известията.'))
+      .finally(() => setLoading(false));
+  }, [token]);
+
+  const handleDismiss = async (id) => {
+    await api.patch(`/alerts/${id}/dismiss`);
+    setAlerts((prev) => prev.map((a) => (a._id === id ? { ...a, dismissed: true } : a)));
+  };
+
+  if (!token) {
+    return (
+      <div className="min-h-[calc(100vh-4rem)] pt-24 px-4 flex flex-col items-center text-center">
+        <div className="text-5xl mb-4">🔒</div>
+        <h2 className="text-xl font-semibold text-white mb-2">Влез в акаунта си</h2>
+        <p className="text-slate-400 mb-6">Известията са достъпни само за логнати потребители.</p>
+        <Link to="/login" className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium">
+          Вход
+        </Link>
+      </div>
+    );
+  }
 
   const visible = alerts
     .filter((a) => filter === 'All' || a.priority === filter)
@@ -46,27 +81,44 @@ export default function AlertsPage() {
           ))}
         </div>
 
-        <div className="space-y-3">
-          {visible.map((alert) => (
-            <Card key={alert.id} className="hover:border-slate-600 transition-colors">
-              <div className="flex items-start gap-4">
-                <div className="text-2xl leading-none mt-0.5">{typeIcons[alert.type] || '🔔'}</div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex flex-wrap items-center gap-2 mb-1">
-                    <PriorityBadge priority={alert.priority} />
-                    <Link to={`/analysis/${alert.symbol}`} className="text-sm font-semibold text-blue-400 hover:underline">
-                      {alert.symbol}
-                    </Link>
-                    <span className="text-xs text-slate-500">{alert.time}</span>
-                  </div>
-                  <h3 className="text-white font-medium mb-1">{alert.title}</h3>
-                  <p className="text-sm text-slate-400">{alert.description}</p>
-                </div>
-              </div>
-            </Card>
-          ))}
+        {error && <p className="text-sm text-red-400 mb-4">{error}</p>}
 
-          {visible.length === 0 && (
+        <div className="space-y-3">
+          {loading ? (
+            <p className="text-sm text-slate-500">Зареждане...</p>
+          ) : (
+            visible.map((alert) => (
+              <Card
+                key={alert._id}
+                className={`hover:border-slate-600 transition-colors ${alert.dismissed ? 'opacity-50' : ''}`}
+              >
+                <div className="flex items-start gap-4">
+                  <div className="text-2xl leading-none mt-0.5">{typeIcons[alert.type] || '🔔'}</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex flex-wrap items-center gap-2 mb-1">
+                      <PriorityBadge priority={alert.priority} />
+                      <Link to={`/analysis/${alert.symbol}`} className="text-sm font-semibold text-blue-400 hover:underline">
+                        {alert.symbol}
+                      </Link>
+                      <span className="text-xs text-slate-500">{timeAgo(alert.createdAt)}</span>
+                    </div>
+                    <h3 className="text-white font-medium mb-1">{alert.title}</h3>
+                    <p className="text-sm text-slate-400">{alert.description}</p>
+                  </div>
+                  {!alert.dismissed && (
+                    <button
+                      onClick={() => handleDismiss(alert._id)}
+                      className="shrink-0 text-xs text-slate-500 hover:text-white border border-slate-700 hover:border-slate-600 rounded-lg px-2.5 py-1.5 transition-colors"
+                    >
+                      Отбележи
+                    </button>
+                  )}
+                </div>
+              </Card>
+            ))
+          )}
+
+          {!loading && visible.length === 0 && (
             <div className="text-center text-slate-500 py-16">Няма известия за този филтър.</div>
           )}
         </div>

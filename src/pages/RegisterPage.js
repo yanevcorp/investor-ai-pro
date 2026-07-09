@@ -1,22 +1,35 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import api from '../lib/api';
+import { useAuthStore } from '../store/authStore';
 
 export default function RegisterPage() {
   const navigate = useNavigate();
+  const setAuth = useAuthStore((s) => s.setAuth);
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (password !== confirmPassword) {
       setError('Паролите не съвпадат.');
       return;
     }
     setError('');
-    navigate('/');
+    setLoading(true);
+    try {
+      const res = await api.post('/auth/register', { username, email, password });
+      setAuth(res.data.token, res.data.user);
+      navigate('/');
+    } catch (err) {
+      setError(err.response?.data?.message || 'Възникна грешка при регистрация. Опитай отново.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -83,9 +96,10 @@ export default function RegisterPage() {
 
             <button
               type="submit"
-              className="w-full py-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium transition-colors"
+              disabled={loading}
+              className="w-full py-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-60 disabled:cursor-not-allowed text-white font-medium transition-colors"
             >
-              Създай акаунт
+              {loading ? 'Създаване...' : 'Създай акаунт'}
             </button>
           </form>
         </div>
