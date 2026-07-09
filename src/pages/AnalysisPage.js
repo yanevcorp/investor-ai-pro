@@ -1,9 +1,8 @@
 import { useEffect, useState } from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from 'recharts';
 import toast from 'react-hot-toast';
 import api from '../lib/api';
-import { useAuthStore } from '../store/authStore';
 import { Card, VerdictBadge, MetricRow } from '../components/ui';
 
 const TABS = [
@@ -77,8 +76,6 @@ function AddToPortfolioForm({ onAdd, onCancel }) {
 
 export default function AnalysisPage() {
   const { symbol } = useParams();
-  const navigate = useNavigate();
-  const token = useAuthStore((s) => s.token);
   const sym = (symbol || '').toUpperCase();
   const [stock, setStock] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -110,15 +107,7 @@ export default function AnalysisPage() {
     };
   }, [sym]);
 
-  const requireAuth = () => {
-    if (token) return true;
-    toast.error('Влез в акаунта си, за да продължиш.');
-    navigate('/login');
-    return false;
-  };
-
   const handleAddToWatchlist = async () => {
-    if (!requireAuth()) return;
     setAddingToWatchlist(true);
     try {
       await api.post('/watchlist', { symbol: sym });
@@ -206,9 +195,7 @@ export default function AnalysisPage() {
 
             {!showPortfolioForm && (
               <button
-                onClick={() => {
-                  if (requireAuth()) setShowPortfolioForm(true);
-                }}
+                onClick={() => setShowPortfolioForm(true)}
                 className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium transition-colors"
               >
                 + Portfolio

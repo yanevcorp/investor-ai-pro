@@ -1,7 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
 import api from '../lib/api';
-import { useAuthStore } from '../store/authStore';
 import { stressTestScenarios, hiddenRisks, correlationMatrix } from '../data/mockData';
 import { Card } from '../components/ui';
 
@@ -85,7 +83,6 @@ function AddHoldingForm({ onAdd }) {
 }
 
 export default function PortfolioPage() {
-  const token = useAuthStore((s) => s.token);
   const [holdings, setHoldings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -106,9 +103,9 @@ export default function PortfolioPage() {
   };
 
   useEffect(() => {
-    if (token) loadPortfolio();
+    loadPortfolio();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
+  }, []);
 
   const handleAdd = async ({ symbol, weight, value }) => {
     const res = await api.post('/portfolio', { symbol, weight, value });
@@ -121,19 +118,6 @@ export default function PortfolioPage() {
   };
 
   const totalValue = holdings.reduce((sum, h) => sum + h.value, 0);
-
-  if (!token) {
-    return (
-      <div className="min-h-[calc(100vh-4rem)] pt-24 px-4 flex flex-col items-center text-center">
-        <div className="text-5xl mb-4">🔒</div>
-        <h2 className="text-xl font-semibold text-white mb-2">Влез в акаунта си</h2>
-        <p className="text-slate-400 mb-6">Портфолиото е достъпно само за логнати потребители.</p>
-        <Link to="/login" className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium">
-          Вход
-        </Link>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-[calc(100vh-4rem)] pt-20 px-4 pb-16">

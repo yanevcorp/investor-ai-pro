@@ -1,5 +1,5 @@
 const express = require('express');
-const { protect } = require('../middleware/auth');
+const { optionalAuth } = require('../middleware/auth');
 const {
   getPortfolio,
   addHolding,
@@ -9,7 +9,7 @@ const {
 
 const router = express.Router();
 
-router.use(protect);
+router.use(optionalAuth);
 
 router.get('/', getPortfolio);
 router.post('/', addHolding);

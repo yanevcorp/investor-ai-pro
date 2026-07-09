@@ -1,11 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../lib/api';
-import { useAuthStore } from '../store/authStore';
 import { Card, VerdictBadge } from '../components/ui';
 
 export default function WatchlistPage() {
-  const token = useAuthStore((s) => s.token);
   const [symbols, setSymbols] = useState([]);
   const [stocksBySymbol, setStocksBySymbol] = useState({});
   const [loading, setLoading] = useState(true);
@@ -31,9 +29,9 @@ export default function WatchlistPage() {
   };
 
   useEffect(() => {
-    if (token) load();
+    load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
+  }, []);
 
   const handleAdd = async (e) => {
     e.preventDefault();
@@ -47,19 +45,6 @@ export default function WatchlistPage() {
     const res = await api.delete(`/watchlist/${symbol}`);
     setSymbols(res.data.watchlist.symbols);
   };
-
-  if (!token) {
-    return (
-      <div className="min-h-[calc(100vh-4rem)] pt-24 px-4 flex flex-col items-center text-center">
-        <div className="text-5xl mb-4">🔒</div>
-        <h2 className="text-xl font-semibold text-white mb-2">Влез в акаунта си</h2>
-        <p className="text-slate-400 mb-6">Watchlist-ът е достъпен само за логнати потребители.</p>
-        <Link to="/login" className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium">
-          Вход
-        </Link>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-[calc(100vh-4rem)] pt-20 px-4 pb-16">

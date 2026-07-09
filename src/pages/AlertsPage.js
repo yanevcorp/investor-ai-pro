@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../lib/api';
-import { useAuthStore } from '../store/authStore';
 import { timeAgo } from '../utils/time';
 import { Card, PriorityBadge } from '../components/ui';
 
@@ -16,14 +15,12 @@ const typeIcons = {
 };
 
 export default function AlertsPage() {
-  const token = useAuthStore((s) => s.token);
   const [alerts, setAlerts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [filter, setFilter] = useState('All');
 
   useEffect(() => {
-    if (!token) return;
     setLoading(true);
     setError('');
     api
@@ -31,25 +28,12 @@ export default function AlertsPage() {
       .then((res) => setAlerts(res.data.alerts))
       .catch((err) => setError(err.response?.data?.message || 'Неуспешно зареждане на известията.'))
       .finally(() => setLoading(false));
-  }, [token]);
+  }, []);
 
   const handleDismiss = async (id) => {
     await api.patch(`/alerts/${id}/dismiss`);
     setAlerts((prev) => prev.map((a) => (a._id === id ? { ...a, dismissed: true } : a)));
   };
-
-  if (!token) {
-    return (
-      <div className="min-h-[calc(100vh-4rem)] pt-24 px-4 flex flex-col items-center text-center">
-        <div className="text-5xl mb-4">🔒</div>
-        <h2 className="text-xl font-semibold text-white mb-2">Влез в акаунта си</h2>
-        <p className="text-slate-400 mb-6">Известията са достъпни само за логнати потребители.</p>
-        <Link to="/login" className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium">
-          Вход
-        </Link>
-      </div>
-    );
-  }
 
   const visible = alerts
     .filter((a) => filter === 'All' || a.priority === filter)
