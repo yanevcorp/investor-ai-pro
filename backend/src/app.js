@@ -24,7 +24,11 @@ if (process.env.NODE_ENV !== 'test') {
   app.use(morgan('dev'));
 }
 
-app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
+// Vercel populates VERCEL_GIT_COMMIT_SHA only on git-triggered deployments,
+// not on a manual `vercel --prod` — surfacing it here doubles as a quick
+// way to confirm which commit is actually live and that auto-deploy (not
+// a manual deploy) produced it.
+app.get('/api/health', (req, res) => res.json({ status: 'ok', commit: process.env.VERCEL_GIT_COMMIT_SHA || null }));
 
 app.use('/api/auth', authRoutes);
 app.use('/api/stocks', stockRoutes);
