@@ -5,6 +5,8 @@ const newsService = require('../services/newsService');
 const { buildGenericAnalysis } = require('../utils/buildAnalysis');
 const { isEtfSymbol } = require('../utils/etf');
 const { getMarketSession } = require('../utils/marketSession');
+const { getOrFetchHistory } = require('../services/historyService');
+const { sparklineFrom, maxDrawdownPercent } = require('../utils/portfolioRisk');
 
 function avNumber(value) {
   if (value === undefined || value === null || value === 'None' || value === '-') return null;
@@ -308,4 +310,28 @@ async function searchStocks(req, res, next) {
   }
 }
 
-module.exports = { listStocks, getStock, searchStocks };
+async function getStockHistory(req, res, next) {
+  try {
+    const symbol = req.params.symbol.toUpperCase();
+    let stock = await Stock.findOne({ symbol });
+
+    if (!stock) {
+      stock = await provisionStock(symbol);
+      if (!stock) {
+        return res.status(404).json({ message: `Stock ${symbol} not found` });
+      }
+    }
+
+    const history = await getOrFetchHistory(stock);
+    res.json({
+      symbol,
+      sparkline: sparklineFrom(history, 7),
+      history,
+      drawdownPercent: maxDrawdownPercent(history),
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = { listStocks, getStock, searchStocks, getStockHistory, provisionStock };

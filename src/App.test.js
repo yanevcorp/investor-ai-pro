@@ -3,6 +3,6 @@ import App from './App';
 
 test('renders home page search placeholder', () => {
   render(<App />);
-  const inputElement = screen.getByPlaceholderText(/Намери ми подценени/i);
+  const inputElement = screen.getByPlaceholderText(/киберсигурността/i);
   expect(inputElement).toBeInTheDocument();
 });

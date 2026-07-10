@@ -5,6 +5,14 @@ import api from '../lib/api';
 const QUICK_SUGGESTIONS = ['RKLB', 'PLTR', 'MSTR', 'AAPL', 'TSLA'];
 const SEARCH_DEBOUNCE_MS = 300;
 
+const NL_EXAMPLE_QUERIES = [
+  'Намери подценени компании от киберсигурността с дълг под 20%',
+  'Сравни TSLA и NVDA по рентабилност',
+  'Покажи ETF-и с нисък разход',
+  'Акции с insider buying тази седмица',
+];
+const PLACEHOLDER_ROTATE_MS = 3500;
+
 export default function HomePage() {
   const navigate = useNavigate();
   const [tab, setTab] = useState('nl');
@@ -12,6 +20,7 @@ export default function HomePage() {
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
+  const [placeholderIndex, setPlaceholderIndex] = useState(0);
   const containerRef = useRef(null);
   // Debounced search responses can resolve out of order (a fast second
   // keystroke's request can come back before the first's) — this guards
@@ -46,6 +55,16 @@ export default function HomePage() {
 
     return () => clearTimeout(timer);
   }, [query, tab]);
+
+  // Only rotates while the field is actually showing a placeholder — once
+  // the user has typed something there's nothing to rotate underneath it.
+  useEffect(() => {
+    if (tab !== 'nl' || query) return;
+    const interval = setInterval(() => {
+      setPlaceholderIndex((i) => (i + 1) % NL_EXAMPLE_QUERIES.length);
+    }, PLACEHOLDER_ROTATE_MS);
+    return () => clearInterval(interval);
+  }, [tab, query]);
 
   useEffect(() => {
     function handleOutsideInteraction(e) {
@@ -140,9 +159,7 @@ export default function HomePage() {
               onKeyDown={handleKeyDown}
               autoComplete="off"
               placeholder={
-                tab === 'nl'
-                  ? 'Намери ми подценени tech компании с нисък дълг...'
-                  : 'Въведи тикер, напр. AAPL, TSLA, RKLB...'
+                tab === 'nl' ? NL_EXAMPLE_QUERIES[placeholderIndex] : 'Въведи тикер, напр. AAPL, TSLA, RKLB...'
               }
               className="w-full bg-slate-800 border border-slate-700 rounded-2xl py-5 pl-6 pr-16 text-base md:text-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent shadow-xl"
             />

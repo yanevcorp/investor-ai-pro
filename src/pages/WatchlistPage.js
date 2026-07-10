@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../lib/api';
 import { Card, VerdictBadge } from '../components/ui';
+import Sparkline from '../components/Sparkline';
+import ExpandedChartModal from '../components/ExpandedChartModal';
+import useStockHistories from '../hooks/useStockHistories';
 
 export default function WatchlistPage() {
   const [symbols, setSymbols] = useState([]);
@@ -9,6 +12,8 @@ export default function WatchlistPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [newSymbol, setNewSymbol] = useState('');
+  const [expandedSymbol, setExpandedSymbol] = useState(null);
+  const historiesBySymbol = useStockHistories(symbols);
 
   const load = async () => {
     setLoading(true);
@@ -84,6 +89,11 @@ export default function WatchlistPage() {
                       <div className="text-white font-semibold">{sym}</div>
                       <div className="text-sm text-slate-500">{stock ? stock.name : 'Няма данни в API-то'}</div>
                     </Link>
+                    <Sparkline
+                      closes={historiesBySymbol[sym]?.sparkline}
+                      onClick={() => setExpandedSymbol(sym)}
+                      title={`Виж пълна графика за ${sym}`}
+                    />
                     {stock && (
                       <>
                         <div className="text-right">
@@ -109,6 +119,9 @@ export default function WatchlistPage() {
           </div>
         )}
       </div>
+      {expandedSymbol && (
+        <ExpandedChartModal symbol={expandedSymbol} onClose={() => setExpandedSymbol(null)} />
+      )}
     </div>
   );
 }

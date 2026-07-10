@@ -2,6 +2,10 @@ import { useEffect, useState } from 'react';
 import api from '../lib/api';
 import { stressTestScenarios, hiddenRisks, correlationMatrix } from '../data/mockData';
 import { Card } from '../components/ui';
+import Sparkline from '../components/Sparkline';
+import ExpandedChartModal from '../components/ExpandedChartModal';
+import RiskGrid from '../components/RiskGrid';
+import useStockHistories from '../hooks/useStockHistories';
 
 function corrColor(value) {
   if (value === 1) return 'bg-blue-600 text-white';
@@ -84,17 +88,25 @@ function AddHoldingForm({ onAdd }) {
 
 export default function PortfolioPage() {
   const [holdings, setHoldings] = useState([]);
+  const [stocksBySymbol, setStocksBySymbol] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [activeScenario, setActiveScenario] = useState(stressTestScenarios[0].id);
+  const [expandedSymbol, setExpandedSymbol] = useState(null);
   const scenario = stressTestScenarios.find((s) => s.id === activeScenario);
+  const historiesBySymbol = useStockHistories(holdings.map((h) => h.symbol));
 
   const loadPortfolio = async () => {
     setLoading(true);
     setError('');
     try {
-      const res = await api.get('/portfolio');
-      setHoldings(res.data.portfolio.holdings);
+      const [portfolioRes, stocksRes] = await Promise.all([api.get('/portfolio'), api.get('/stocks')]);
+      setHoldings(portfolioRes.data.portfolio.holdings);
+      const map = {};
+      (stocksRes.data?.stocks || []).forEach((s) => {
+        map[s.symbol] = s;
+      });
+      setStocksBySymbol(map);
     } catch (err) {
       setError(err.response?.data?.message || 'Неуспешно зареждане на портфолиото.');
     } finally {
@@ -118,6 +130,12 @@ export default function PortfolioPage() {
   };
 
   const totalValue = holdings.reduce((sum, h) => sum + h.value, 0);
+  const positions = holdings.map((h) => ({
+    symbol: h.symbol,
+    weight: h.weight,
+    sector: stocksBySymbol[h.symbol]?.sector || '',
+    drawdownPercent: historiesBySymbol[h.symbol]?.drawdownPercent ?? null,
+  }));
 
   return (
     <div className="min-h-[calc(100vh-4rem)] pt-20 px-4 pb-16">
@@ -151,6 +169,11 @@ export default function PortfolioPage() {
                   </div>
                   <span className="w-12 text-right text-sm text-slate-400">{h.weight}%</span>
                   <span className="w-24 text-right text-sm text-slate-300">${h.value.toLocaleString()}</span>
+                  <Sparkline
+                    closes={historiesBySymbol[h.symbol]?.sparkline}
+                    onClick={() => setExpandedSymbol(h.symbol)}
+                    title={`Виж пълна графика за ${h.symbol}`}
+                  />
                   <button
                     onClick={() => handleDelete(h._id)}
                     className="text-slate-500 hover:text-red-400 text-sm transition-colors"
@@ -163,6 +186,11 @@ export default function PortfolioPage() {
             </div>
           )}
         </Card>
+
+        {/* Risk grid */}
+        <div className="mb-6">
+          <RiskGrid positions={positions} />
+        </div>
 
         {/* Stress test */}
         <Card className="mb-6">
@@ -251,6 +279,9 @@ export default function PortfolioPage() {
           </div>
         </Card>
       </div>
+      {expandedSymbol && (
+        <ExpandedChartModal symbol={expandedSymbol} onClose={() => setExpandedSymbol(null)} />
+      )}
     </div>
   );
 }

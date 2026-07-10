@@ -6,6 +6,7 @@ import api from '../lib/api';
 import { timeAgo } from '../utils/time';
 import { Card, VerdictBadge, MetricRow, toRenderable } from '../components/ui';
 import ErrorBoundary from '../components/ErrorBoundary';
+import SimulatorModal from '../components/SimulatorModal';
 
 const TABS = [
   { key: 'overview', label: 'Overview' },
@@ -118,6 +119,7 @@ export default function AnalysisPage() {
   const [tab, setTab] = useState('overview');
   const [addingToWatchlist, setAddingToWatchlist] = useState(false);
   const [showPortfolioForm, setShowPortfolioForm] = useState(false);
+  const [showSimulator, setShowSimulator] = useState(false);
 
   const loadStock = useCallback(() => {
     let cancelled = false;
@@ -291,6 +293,13 @@ export default function AnalysisPage() {
             {showPortfolioForm && (
               <AddToPortfolioForm onAdd={handleAddToPortfolio} onCancel={() => setShowPortfolioForm(false)} />
             )}
+
+            <button
+              onClick={() => setShowSimulator(true)}
+              className="px-4 py-2 rounded-lg border border-slate-700 text-slate-300 hover:text-white hover:border-slate-600 text-sm font-medium transition-colors"
+            >
+              Симулирай добавяне
+            </button>
           </div>
         </Card>
 
@@ -407,6 +416,7 @@ export default function AnalysisPage() {
           </Card>
         )}
       </div>
+      {showSimulator && <SimulatorModal symbol={sym} onClose={() => setShowSimulator(false)} />}
     </div>
   );
 }

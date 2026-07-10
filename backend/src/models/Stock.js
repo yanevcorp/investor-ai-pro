@@ -30,6 +30,14 @@ const stockSchema = new mongoose.Schema(
     // requests/day, so this must not be re-fetched on every request.
     fundamentals: { type: mongoose.Schema.Types.Mixed, default: null },
     fundamentalsFetchedAt: { type: Date, default: null },
+    // Daily closes from Alpha Vantage TIME_SERIES_DAILY, oldest first.
+    // Same rate-limit reasoning as fundamentals — refetched at most once
+    // every 24h, reused for sparklines, drawdown, and correlation calc.
+    priceHistory: {
+      type: [{ date: String, close: Number, _id: false }],
+      default: [],
+    },
+    priceHistoryFetchedAt: { type: Date, default: null },
   },
   { timestamps: true }
 );

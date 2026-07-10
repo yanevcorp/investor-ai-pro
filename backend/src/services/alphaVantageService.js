@@ -48,4 +48,29 @@ async function getEtfProfile(symbol) {
   return data;
 }
 
-module.exports = { getOverview, getEtfProfile };
+async function getDailyHistory(symbol) {
+  const cacheKey = `alphavantage:daily:${symbol}`;
+  const cached = cache.get(cacheKey);
+  if (cached) return cached;
+
+  const { data } = await axios.get(BASE_URL, {
+    params: { function: 'TIME_SERIES_DAILY', symbol, outputsize: 'compact', apikey: process.env.ALPHA_VANTAGE_API_KEY },
+    timeout: 8000,
+  });
+
+  const series = data?.['Time Series (Daily)'];
+  if (!series || typeof series !== 'object') {
+    throw new Error(`No Alpha Vantage daily history for ${symbol}: ${data?.Note || data?.Information || 'empty response'}`);
+  }
+
+  // Oldest first, matching how a price chart reads left-to-right.
+  const history = Object.entries(series)
+    .map(([date, values]) => ({ date, close: Number(values['4. close']) }))
+    .filter((point) => Number.isFinite(point.close))
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  cache.set(cacheKey, history, OVERVIEW_TTL_MS);
+  return history;
+}
+
+module.exports = { getOverview, getEtfProfile, getDailyHistory };

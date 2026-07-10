@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import HomePage from './HomePage';
@@ -41,7 +41,7 @@ test('shows ticker/company/type suggestions after typing in ticker mode', async 
 
 test('does not query suggestions in natural-language mode', async () => {
   renderHomePage();
-  userEvent.type(screen.getByPlaceholderText(/Намери ми подценени/), 'undervalued tech');
+  userEvent.type(screen.getByPlaceholderText(/киберсигурността/), 'undervalued tech');
 
   await new Promise((resolve) => setTimeout(resolve, 350));
   expect(api.get).not.toHaveBeenCalled();
@@ -71,4 +71,42 @@ test('renders the suggestion dropdown above fixed mobile chrome (z-60)', async (
   const item = await screen.findByText('Apple Inc');
   const dropdown = item.closest('ul');
   expect(dropdown.className).toMatch(/z-\[60\]/);
+});
+
+test('rotates through example NL queries as the placeholder', () => {
+  jest.useFakeTimers();
+  try {
+    renderHomePage();
+    expect(screen.getByPlaceholderText(/киберсигурността/i)).toBeInTheDocument();
+
+    act(() => {
+      jest.advanceTimersByTime(3500);
+    });
+    expect(screen.getByPlaceholderText(/TSLA и NVDA/i)).toBeInTheDocument();
+
+    act(() => {
+      jest.advanceTimersByTime(3500);
+    });
+    expect(screen.getByPlaceholderText(/ETF-и с нисък разход/i)).toBeInTheDocument();
+  } finally {
+    jest.useRealTimers();
+  }
+});
+
+test('stops rotating the placeholder once the user has typed something', () => {
+  jest.useFakeTimers();
+  try {
+    renderHomePage();
+    const input = screen.getByPlaceholderText(/киберсигурността/i);
+    fireEvent.change(input, { target: { value: 'x' } });
+
+    act(() => {
+      jest.advanceTimersByTime(10000);
+    });
+    // The placeholder is irrelevant once there's real input, but the timer
+    // shouldn't still be silently reassigning it underneath what's typed.
+    expect(input).toHaveValue('x');
+  } finally {
+    jest.useRealTimers();
+  }
 });
