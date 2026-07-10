@@ -24,7 +24,7 @@ export default function HomePage() {
       return;
     }
     const trimmed = query.trim();
-    if (!trimmed) {
+    if (trimmed.length < 2) {
       setSuggestions([]);
       return;
     }
@@ -48,13 +48,21 @@ export default function HomePage() {
   }, [query, tab]);
 
   useEffect(() => {
-    function handleClickOutside(e) {
+    function handleOutsideInteraction(e) {
       if (containerRef.current && !containerRef.current.contains(e.target)) {
         setShowSuggestions(false);
       }
     }
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    // touchstart alongside mousedown: some mobile browsers/in-app webviews
+    // don't reliably synthesize a mousedown from a tap, so relying on
+    // mousedown alone can leave the dropdown stuck open after tapping
+    // elsewhere on a real phone.
+    document.addEventListener('mousedown', handleOutsideInteraction);
+    document.addEventListener('touchstart', handleOutsideInteraction);
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideInteraction);
+      document.removeEventListener('touchstart', handleOutsideInteraction);
+    };
   }, []);
 
   const handleSubmit = (e) => {
@@ -147,13 +155,18 @@ export default function HomePage() {
           </form>
 
           {tab === 'ticker' && showSuggestions && suggestions.length > 0 && (
-            <ul className="absolute left-0 right-0 mt-2 bg-slate-800 border border-slate-700 rounded-xl shadow-2xl overflow-hidden z-20 text-left max-h-80 overflow-y-auto">
+            // z-[60]: above Navbar/BottomNav (z-50) and InstallBanner (z-40).
+            // On a real phone the on-screen keyboard shrinks the visible
+            // viewport enough that this dropdown's position can overlap the
+            // fixed bottom nav — at a lower z-index it rendered completely
+            // hidden behind that opaque bar instead of on top of it.
+            <ul className="absolute left-0 right-0 mt-2 bg-slate-800 border border-slate-700 rounded-xl shadow-2xl overflow-hidden z-[60] text-left max-h-80 overflow-y-auto">
               {suggestions.map((s, i) => (
                 <li key={`${s.symbol}-${i}`}>
                   <button
                     type="button"
                     onClick={() => handleSelectSuggestion(s.symbol)}
-                    className={`w-full flex items-center justify-between gap-3 px-4 py-2.5 text-left transition-colors ${
+                    className={`w-full flex items-center justify-between gap-3 px-4 py-3 min-h-[44px] text-left transition-colors ${
                       i === activeIndex ? 'bg-slate-700' : 'hover:bg-slate-700/60'
                     }`}
                   >

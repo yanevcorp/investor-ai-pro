@@ -46,3 +46,29 @@ test('does not query suggestions in natural-language mode', async () => {
   await new Promise((resolve) => setTimeout(resolve, 350));
   expect(api.get).not.toHaveBeenCalled();
 });
+
+test('does not query suggestions for a single character', async () => {
+  renderHomePage();
+  userEvent.click(screen.getByText('Ticker Search'));
+  userEvent.type(screen.getByPlaceholderText(/Въведи тикер/), 'A');
+
+  await new Promise((resolve) => setTimeout(resolve, 350));
+  expect(api.get).not.toHaveBeenCalled();
+});
+
+test('renders the suggestion dropdown above fixed mobile chrome (z-60)', async () => {
+  // Regression test: the dropdown previously used z-20, which is below
+  // BottomNav/Navbar's z-50 — on a real phone with the keyboard open, the
+  // dropdown rendered completely hidden behind the fixed bottom nav.
+  api.get.mockResolvedValueOnce({
+    data: { results: [{ symbol: 'AAPL', name: 'Apple Inc', type: 'Common Stock', isEtf: false }] },
+  });
+
+  renderHomePage();
+  userEvent.click(screen.getByText('Ticker Search'));
+  userEvent.type(screen.getByPlaceholderText(/Въведи тикер/), 'AAPL');
+
+  const item = await screen.findByText('Apple Inc');
+  const dropdown = item.closest('ul');
+  expect(dropdown.className).toMatch(/z-\[60\]/);
+});
