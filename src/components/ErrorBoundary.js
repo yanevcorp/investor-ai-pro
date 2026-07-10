@@ -17,6 +17,8 @@ export default class ErrorBoundary extends Component {
 
   render() {
     if (this.state.hasError) {
+      if (this.props.fallback) return this.props.fallback;
+
       return (
         <div className="min-h-[calc(100vh-4rem)] pt-24 px-4 flex flex-col items-center text-center">
           <div className="text-5xl mb-4">⚠️</div>

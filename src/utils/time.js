@@ -1,5 +1,8 @@
 export function timeAgo(dateInput) {
-  const diffMs = Date.now() - new Date(dateInput).getTime();
+  const timestamp = new Date(dateInput).getTime();
+  if (!Number.isFinite(timestamp)) return '';
+
+  const diffMs = Date.now() - timestamp;
   const mins = Math.floor(diffMs / 60000);
 
   if (mins < 1) return 'току-що';

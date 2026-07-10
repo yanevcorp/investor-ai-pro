@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import AnalysisPage from './AnalysisPage';
 import api from '../lib/api';
@@ -114,4 +114,64 @@ test('shows an error state when the response has no stock payload', async () => 
   renderAnalysisPage('EMPTY');
 
   expect(await screen.findByText(/Неуспешно зареждане на/)).toBeInTheDocument();
+});
+
+describe('with a real ResizeObserver (recharts measurement path)', () => {
+  // jsdom has no ResizeObserver by default, so recharts' ResponsiveContainer
+  // silently no-ops its measurement effect and every test above renders
+  // without ever exercising that code — which is exactly how the original
+  // mobile-only crash slipped through undetected. Polyfilling it here
+  // forces the real measurement/render path recharts uses in an actual
+  // browser (mobile included).
+  let originalResizeObserver;
+
+  beforeEach(() => {
+    originalResizeObserver = global.ResizeObserver;
+    global.ResizeObserver = class {
+      constructor(callback) {
+        this.callback = callback;
+      }
+      observe(target) {
+        Promise.resolve().then(() => {
+          this.callback([{ target, contentRect: { width: 320, height: 260 } }]);
+        });
+      }
+      unobserve() {}
+      disconnect() {}
+    };
+  });
+
+  afterEach(() => {
+    global.ResizeObserver = originalResizeObserver;
+  });
+
+  test('renders the probability chart without tripping its error boundary', async () => {
+    api.get.mockResolvedValueOnce({
+      data: {
+        stock: {
+          symbol: 'RESIZE',
+          name: 'Resize Corp',
+          price: 50,
+          change: 1,
+          changePercent: 2,
+          verdict: 'BUY',
+          aiScore: 60,
+          analysis: {
+            xaiReasons: [{ label: 'Growth', points: 10, positive: true }],
+            probability: { '1W': { up: 50, flat: 30, down: 20 }, '1M': { up: 55, flat: 25, down: 20 }, '3M': { up: 60, flat: 20, down: 20 } },
+            overview: [{ label: 'Cap', value: '$1B', good: true }],
+          },
+        },
+      },
+    });
+
+    const { container } = renderAnalysisPage('RESIZE');
+
+    expect(await screen.findByText('RESIZE')).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(container.querySelector('.recharts-wrapper')).toBeInTheDocument();
+    });
+    expect(screen.queryByText('Графиката не можа да се зареди.')).not.toBeInTheDocument();
+  });
 });

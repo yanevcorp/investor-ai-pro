@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 import api from '../lib/api';
 import { timeAgo } from '../utils/time';
 import { Card, VerdictBadge, MetricRow } from '../components/ui';
+import ErrorBoundary from '../components/ErrorBoundary';
 
 const TABS = [
   { key: 'overview', label: 'Overview' },
@@ -300,23 +301,39 @@ export default function AnalysisPage() {
         {/* Probability chart */}
         <Card className="mb-6">
           <h2 className="text-lg font-semibold text-white mb-4">Вероятност за посока на цената</h2>
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={probabilityData} barGap={4}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
-                <XAxis dataKey="period" stroke="#64748b" tickLine={false} axisLine={false} />
-                <YAxis stroke="#64748b" tickLine={false} axisLine={false} unit="%" />
-                <Tooltip
-                  contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 8, color: '#e2e8f0' }}
-                  cursor={{ fill: 'rgba(148,163,184,0.05)' }}
-                />
-                <Legend wrapperStyle={{ fontSize: 12, color: '#94a3b8' }} />
-                <Bar dataKey="UP" fill="#22c55e" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="FLAT" fill="#64748b" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="DOWN" fill="#ef4444" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+          <ErrorBoundary
+            fallback={
+              <div className="h-[260px] flex items-center justify-center text-sm text-slate-500">
+                Графиката не можа да се зареди.
+              </div>
+            }
+          >
+            {/* recharts' ResponsiveContainer measures its parent via
+                ResizeObserver, which doesn't exist in the Jest/jsdom test
+                environment — it silently no-ops there, so this only ever
+                really runs in a real browser. A percentage height depends
+                on that measurement resolving correctly on first paint,
+                which is unreliable on mobile browsers with dynamic
+                viewport/toolbar resizing; an explicit pixel height sidesteps
+                that whole class of failure. */}
+            <div style={{ width: '100%', height: 260 }}>
+              <ResponsiveContainer width="100%" height={260} minWidth={280} minHeight={260}>
+                <BarChart data={probabilityData} barGap={4}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
+                  <XAxis dataKey="period" stroke="#64748b" tickLine={false} axisLine={false} />
+                  <YAxis stroke="#64748b" tickLine={false} axisLine={false} unit="%" />
+                  <Tooltip
+                    contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 8, color: '#e2e8f0' }}
+                    cursor={{ fill: 'rgba(148,163,184,0.05)' }}
+                  />
+                  <Legend wrapperStyle={{ fontSize: 12, color: '#94a3b8' }} />
+                  <Bar dataKey="UP" fill="#22c55e" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="FLAT" fill="#64748b" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="DOWN" fill="#ef4444" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </ErrorBoundary>
         </Card>
 
         {/* Tabs */}
