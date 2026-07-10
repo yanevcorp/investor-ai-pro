@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from 'recharts';
 import toast from 'react-hot-toast';
@@ -15,6 +15,25 @@ const TABS = [
   { key: 'insider', label: 'Insider' },
   { key: 'predictions', label: 'Predictions' },
 ];
+
+function toFiniteNumber(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function formatPrice(price) {
+  const n = toFiniteNumber(price);
+  return n === null ? 'N/A' : `$${n.toFixed(2)}`;
+}
+
+function formatChange(change, changePercent) {
+  const c = toFiniteNumber(change);
+  const cp = toFiniteNumber(changePercent);
+  if (c === null || cp === null) {
+    return { text: 'N/A', isPositive: true };
+  }
+  return { text: `${Math.abs(c).toFixed(2)} (${Math.abs(cp).toFixed(2)}%)`, isPositive: c >= 0 };
+}
 
 function AddToPortfolioForm({ onAdd, onCancel }) {
   const [weight, setWeight] = useState('');
@@ -81,23 +100,36 @@ export default function AnalysisPage() {
   const [stock, setStock] = useState(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  const [error, setError] = useState(false);
   const [tab, setTab] = useState('overview');
   const [addingToWatchlist, setAddingToWatchlist] = useState(false);
   const [showPortfolioForm, setShowPortfolioForm] = useState(false);
 
-  useEffect(() => {
+  const loadStock = useCallback(() => {
     let cancelled = false;
     setLoading(true);
     setNotFound(false);
+    setError(false);
     setStock(null);
 
     api
       .get(`/stocks/${sym}`)
       .then((res) => {
-        if (!cancelled) setStock(res.data.stock);
+        if (cancelled) return;
+        const data = res.data?.stock;
+        if (data && typeof data === 'object') {
+          setStock(data);
+        } else {
+          setError(true);
+        }
       })
-      .catch(() => {
-        if (!cancelled) setNotFound(true);
+      .catch((err) => {
+        if (cancelled) return;
+        if (err.response?.status === 404) {
+          setNotFound(true);
+        } else {
+          setError(true);
+        }
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -107,6 +139,8 @@ export default function AnalysisPage() {
       cancelled = true;
     };
   }, [sym]);
+
+  useEffect(() => loadStock(), [loadStock]);
 
   const handleAddToWatchlist = async () => {
     setAddingToWatchlist(true);
@@ -138,6 +172,27 @@ export default function AnalysisPage() {
     );
   }
 
+  if (error) {
+    return (
+      <div className="min-h-[calc(100vh-4rem)] pt-24 px-4 flex flex-col items-center text-center">
+        <div className="text-5xl mb-4">⚠️</div>
+        <h2 className="text-xl font-semibold text-white mb-2">Неуспешно зареждане на "{symbol}"</h2>
+        <p className="text-slate-400 mb-6">Възникна проблем при връзката със сървъра. Опитай отново.</p>
+        <div className="flex gap-3">
+          <button
+            onClick={loadStock}
+            className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium"
+          >
+            Опитай отново
+          </button>
+          <Link to="/" className="px-4 py-2 rounded-lg border border-slate-700 text-slate-300 hover:text-white text-sm font-medium">
+            Начало
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   if (notFound || !stock) {
     return (
       <div className="min-h-[calc(100vh-4rem)] pt-24 px-4 flex flex-col items-center text-center">
@@ -151,13 +206,19 @@ export default function AnalysisPage() {
     );
   }
 
-  const details = stock.analysis || {};
-  const isPositive = stock.change >= 0;
+  const details = (stock.analysis && typeof stock.analysis === 'object') ? stock.analysis : {};
+  const priceText = formatPrice(stock.price);
+  const changeInfo = formatChange(stock.change, stock.changePercent);
+  const aiScoreText = toFiniteNumber(stock.aiScore) === null ? 'N/A' : stock.aiScore;
+  const xaiReasons = Array.isArray(details.xaiReasons) ? details.xaiReasons.filter(Boolean) : [];
+  const newsArticles = Array.isArray(details.news) ? details.news.filter(Boolean) : [];
+  const activeTabMetrics = Array.isArray(details[tab]) ? details[tab].filter(Boolean) : [];
+
   const probabilityData = ['1W', '1M', '3M'].map((period) => ({
     period,
-    UP: details.probability?.[period]?.up ?? 0,
-    FLAT: details.probability?.[period]?.flat ?? 0,
-    DOWN: details.probability?.[period]?.down ?? 0,
+    UP: toFiniteNumber(details.probability?.[period]?.up) ?? 0,
+    FLAT: toFiniteNumber(details.probability?.[period]?.flat) ?? 0,
+    DOWN: toFiniteNumber(details.probability?.[period]?.down) ?? 0,
   }));
 
   return (
@@ -167,19 +228,19 @@ export default function AnalysisPage() {
         <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
           <div>
             <div className="flex items-center gap-3 mb-1">
-              <h1 className="text-2xl font-bold text-white">{stock.symbol}</h1>
-              <span className="text-slate-400 text-sm">{stock.name}</span>
+              <h1 className="text-2xl font-bold text-white">{stock.symbol || sym}</h1>
+              {stock.name && <span className="text-slate-400 text-sm">{stock.name}</span>}
             </div>
-            <p className="text-xs text-slate-500">{stock.sector}</p>
+            {stock.sector && <p className="text-xs text-slate-500">{stock.sector}</p>}
           </div>
           <div className="flex items-center gap-4">
             <div className="text-right">
-              <div className="text-2xl font-bold text-white">${stock.price.toFixed(2)}</div>
-              <div className={`text-sm font-medium ${isPositive ? 'text-green-400' : 'text-red-400'}`}>
-                {isPositive ? '▲' : '▼'} {Math.abs(stock.change).toFixed(2)} ({Math.abs(stock.changePercent).toFixed(2)}%)
+              <div className="text-2xl font-bold text-white">{priceText}</div>
+              <div className={`text-sm font-medium ${changeInfo.isPositive ? 'text-green-400' : 'text-red-400'}`}>
+                {changeInfo.isPositive ? '▲' : '▼'} {changeInfo.text}
               </div>
             </div>
-            <VerdictBadge verdict={stock.verdict} className="text-sm px-4 py-2" />
+            {stock.verdict && <VerdictBadge verdict={stock.verdict} className="text-sm px-4 py-2" />}
           </div>
         </div>
 
@@ -210,25 +271,31 @@ export default function AnalysisPage() {
         </Card>
 
         {/* XAI Explanation */}
-        <Card className="mb-6">
-          <h2 className="text-lg font-semibold text-white mb-1">
-            Защо препоръчваме <span className="text-blue-400">{stock.verdict}</span>?
-          </h2>
-          <p className="text-sm text-slate-500 mb-4">AI Score: {stock.aiScore}/100 — базирано на претеглена комбинация от фактори</p>
-          <div className="space-y-2">
-            {(details.xaiReasons || []).map((reason, i) => (
-              <div key={i} className="flex items-center justify-between gap-4 bg-slate-900/50 rounded-lg px-4 py-2.5">
-                <span className="text-sm text-slate-300 flex items-center gap-2">
-                  <span>{reason.positive ? '✅' : '❌'}</span>
-                  {reason.label}
-                </span>
-                <span className={`text-sm font-semibold ${reason.positive ? 'text-green-400' : 'text-red-400'}`}>
-                  {reason.points > 0 ? '+' : ''}{reason.points} т.
-                </span>
+        {stock.verdict && (
+          <Card className="mb-6">
+            <h2 className="text-lg font-semibold text-white mb-1">
+              Защо препоръчваме <span className="text-blue-400">{stock.verdict}</span>?
+            </h2>
+            <p className="text-sm text-slate-500 mb-4">AI Score: {aiScoreText}/100 — базирано на претеглена комбинация от фактори</p>
+            {xaiReasons.length > 0 ? (
+              <div className="space-y-2">
+                {xaiReasons.map((reason, i) => (
+                  <div key={i} className="flex items-center justify-between gap-4 bg-slate-900/50 rounded-lg px-4 py-2.5">
+                    <span className="text-sm text-slate-300 flex items-center gap-2">
+                      <span>{reason?.positive ? '✅' : '❌'}</span>
+                      {reason?.label || ''}
+                    </span>
+                    <span className={`text-sm font-semibold ${reason?.positive ? 'text-green-400' : 'text-red-400'}`}>
+                      {toFiniteNumber(reason?.points) !== null ? `${reason.points > 0 ? '+' : ''}${reason.points} т.` : ''}
+                    </span>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        </Card>
+            ) : (
+              <p className="text-sm text-slate-500">Няма достатъчно данни за анализ.</p>
+            )}
+          </Card>
+        )}
 
         {/* Probability chart */}
         <Card className="mb-6">
@@ -268,28 +335,32 @@ export default function AnalysisPage() {
         </div>
 
         <Card>
-          {(details[tab] || []).map((metric, i) => (
-            <MetricRow key={i} label={metric.label} value={metric.value} good={metric.good} />
-          ))}
+          {activeTabMetrics.length > 0 ? (
+            activeTabMetrics.map((metric, i) => (
+              <MetricRow key={i} label={metric?.label || ''} value={metric?.value ?? 'N/A'} good={Boolean(metric?.good)} />
+            ))
+          ) : (
+            <p className="text-sm text-slate-500">Няма данни за този раздел.</p>
+          )}
         </Card>
 
-        {tab === 'sentiment' && details.news && details.news.length > 0 && (
+        {tab === 'sentiment' && newsArticles.length > 0 && (
           <Card className="mt-6">
             <h2 className="text-lg font-semibold text-white mb-4">Скорошни новини</h2>
             <div className="space-y-3">
-              {details.news.map((article, i) => (
+              {newsArticles.map((article, i) => (
                 <a
                   key={i}
-                  href={article.url}
+                  href={article?.url || '#'}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="block bg-slate-900/50 hover:bg-slate-900 rounded-lg px-4 py-3 transition-colors"
                 >
                   <div className="flex items-center justify-between gap-3 mb-1">
-                    <span className="text-xs text-blue-400 font-medium">{article.source}</span>
-                    <span className="text-xs text-slate-500">{timeAgo(article.publishedAt)}</span>
+                    <span className="text-xs text-blue-400 font-medium">{article?.source || ''}</span>
+                    {article?.publishedAt && <span className="text-xs text-slate-500">{timeAgo(article.publishedAt)}</span>}
                   </div>
-                  <h3 className="text-sm text-slate-200 font-medium">{article.title}</h3>
+                  <h3 className="text-sm text-slate-200 font-medium">{article?.title || ''}</h3>
                 </a>
               ))}
             </div>

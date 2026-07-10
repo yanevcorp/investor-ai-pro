@@ -120,17 +120,25 @@ async function provisionStock(symbol) {
   const verdict = deriveVerdict(quote.changePercent);
   const positive = verdict === 'STRONG BUY' || verdict === 'BUY';
 
-  return Stock.create({
-    symbol,
-    name: profile?.name || symbol,
-    sector: profile?.sector || '',
-    price: quote.price,
-    change: quote.change,
-    changePercent: quote.changePercent,
-    verdict,
-    aiScore: deriveAiScore(quote.changePercent),
-    analysis: buildGenericAnalysis(positive),
-  });
+  try {
+    return await Stock.create({
+      symbol,
+      name: profile?.name || symbol,
+      sector: profile?.sector || '',
+      price: quote.price,
+      change: quote.change,
+      changePercent: quote.changePercent,
+      verdict,
+      aiScore: deriveAiScore(quote.changePercent),
+      analysis: buildGenericAnalysis(positive),
+    });
+  } catch (err) {
+    // Two concurrent requests discovering the same new symbol can race on
+    // the unique index — whoever loses just reads what the winner wrote.
+    const existing = await Stock.findOne({ symbol });
+    if (existing) return existing;
+    throw err;
+  }
 }
 
 async function listStocks(req, res, next) {
