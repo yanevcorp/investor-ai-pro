@@ -91,6 +91,37 @@ test('renders without crashing when analysis arrays contain null/malformed entri
   expect(screen.getByText('ok')).toBeInTheDocument();
 });
 
+test('renders without crashing when fields that should be strings are objects', async () => {
+  // Optional chaining guards against missing fields, but not against a
+  // field existing with the wrong type — React throws "Objects are not
+  // valid as a React child" if one of these is ever rendered directly.
+  api.get.mockResolvedValueOnce({
+    data: {
+      stock: {
+        symbol: { unexpected: 'shape' },
+        name: { unexpected: 'shape' },
+        sector: { unexpected: 'shape' },
+        price: 10,
+        change: 0.1,
+        changePercent: 1,
+        verdict: { unexpected: 'shape' },
+        aiScore: 50,
+        analysis: {
+          xaiReasons: [{ label: { unexpected: 'shape' }, points: 5, positive: true }],
+          overview: [{ label: { unexpected: 'shape' }, value: { unexpected: 'shape' }, good: true }],
+          news: [{ title: { unexpected: 'shape' }, source: { unexpected: 'shape' }, url: 'https://x.com' }],
+        },
+      },
+    },
+  });
+
+  renderAnalysisPage('WEIRD');
+
+  // Falls back to the route param instead of crashing on the malformed symbol.
+  expect(await screen.findByText('WEIRD')).toBeInTheDocument();
+  expect(screen.getAllByText('N/A').length).toBeGreaterThanOrEqual(1);
+});
+
 test('shows not-found state on a 404 response', async () => {
   api.get.mockRejectedValueOnce({ response: { status: 404 } });
 

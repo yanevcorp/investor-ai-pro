@@ -1,3 +1,11 @@
+// React throws "Objects are not valid as a React child" if a non-primitive
+// ever lands in JSX — optional chaining doesn't protect against this since
+// the field exists, it's just the wrong shape. API-sourced values (verdict,
+// metric label/value, etc.) go through this before being rendered.
+export function toRenderable(value, fallback = '') {
+  return typeof value === 'string' || typeof value === 'number' ? value : fallback;
+}
+
 export function Card({ children, className = '' }) {
   return (
     <div className={`bg-slate-800/60 border border-slate-700 rounded-xl p-5 ${className}`}>
@@ -15,10 +23,11 @@ const verdictStyles = {
 };
 
 export function VerdictBadge({ verdict, className = '' }) {
-  const style = verdictStyles[verdict] || verdictStyles.HOLD;
+  const text = toRenderable(verdict);
+  const style = verdictStyles[text] || verdictStyles.HOLD;
   return (
     <span className={`inline-flex items-center px-3 py-1 rounded-lg border text-xs font-bold tracking-wide ${style} ${className}`}>
-      {verdict}
+      {text}
     </span>
   );
 }
@@ -49,10 +58,10 @@ export function Indicator({ good, children }) {
 export function MetricRow({ label, value, good }) {
   return (
     <div className="flex items-center justify-between py-2.5 border-b border-slate-700/60 last:border-0">
-      <span className="text-sm text-slate-400">{label}</span>
+      <span className="text-sm text-slate-400">{toRenderable(label)}</span>
       <span className={`text-sm font-medium flex items-center gap-1.5 ${good ? 'text-green-400' : 'text-red-400'}`}>
         <span>{good ? '✅' : '❌'}</span>
-        {value}
+        {toRenderable(value, 'N/A')}
       </span>
     </div>
   );

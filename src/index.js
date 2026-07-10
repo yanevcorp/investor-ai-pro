@@ -5,6 +5,35 @@ import App from './App';
 import reportWebVitals from './reportWebVitals';
 import * as serviceWorkerRegistration from './serviceWorkerRegistration';
 
+// React's ErrorBoundary only catches errors thrown synchronously during
+// render/lifecycle methods. It cannot catch errors thrown inside async
+// callbacks — e.g. a ResizeObserver or requestAnimationFrame callback deep
+// inside a charting library — which instead surface here as an uncaught
+// exception or unhandled rejection with no boundary fallback shown at all.
+// Logged with the same shape as ErrorBoundary's log so both paths are
+// searchable together.
+window.addEventListener('error', (event) => {
+  console.error('Uncaught window error:', {
+    message: event.error?.message || event.message,
+    stack: event.error?.stack,
+    url: window.location.href,
+    userAgent: navigator.userAgent,
+    viewport: `${window.innerWidth}x${window.innerHeight}`,
+    timestamp: new Date().toISOString(),
+  });
+});
+
+window.addEventListener('unhandledrejection', (event) => {
+  console.error('Unhandled promise rejection:', {
+    message: event.reason?.message || String(event.reason),
+    stack: event.reason?.stack,
+    url: window.location.href,
+    userAgent: navigator.userAgent,
+    viewport: `${window.innerWidth}x${window.innerHeight}`,
+    timestamp: new Date().toISOString(),
+  });
+});
+
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
   <React.StrictMode>

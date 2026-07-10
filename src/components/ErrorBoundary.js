@@ -12,7 +12,19 @@ export default class ErrorBoundary extends Component {
   }
 
   componentDidCatch(error, info) {
-    console.error('Unhandled UI error:', error, info);
+    // Deliberately verbose: this is the only signal we get from a crash on
+    // a device we can't attach devtools to (e.g. a user's phone). Viewport
+    // and userAgent distinguish "mobile-only" bugs from data-shape bugs
+    // that just happened to only be tested on desktop.
+    console.error('Unhandled UI error:', {
+      message: error?.message,
+      stack: error?.stack,
+      componentStack: info?.componentStack,
+      url: window.location.href,
+      userAgent: navigator.userAgent,
+      viewport: `${window.innerWidth}x${window.innerHeight}`,
+      timestamp: new Date().toISOString(),
+    });
   }
 
   render() {

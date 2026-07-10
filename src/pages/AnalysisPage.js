@@ -4,7 +4,7 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGri
 import toast from 'react-hot-toast';
 import api from '../lib/api';
 import { timeAgo } from '../utils/time';
-import { Card, VerdictBadge, MetricRow } from '../components/ui';
+import { Card, VerdictBadge, MetricRow, toRenderable } from '../components/ui';
 import ErrorBoundary from '../components/ErrorBoundary';
 
 const TABS = [
@@ -229,10 +229,10 @@ export default function AnalysisPage() {
         <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
           <div>
             <div className="flex items-center gap-3 mb-1">
-              <h1 className="text-2xl font-bold text-white">{stock.symbol || sym}</h1>
-              {stock.name && <span className="text-slate-400 text-sm">{stock.name}</span>}
+              <h1 className="text-2xl font-bold text-white">{toRenderable(stock.symbol, sym)}</h1>
+              {toRenderable(stock.name) && <span className="text-slate-400 text-sm">{toRenderable(stock.name)}</span>}
             </div>
-            {stock.sector && <p className="text-xs text-slate-500">{stock.sector}</p>}
+            {toRenderable(stock.sector) && <p className="text-xs text-slate-500">{toRenderable(stock.sector)}</p>}
           </div>
           <div className="flex items-center gap-4">
             <div className="text-right">
@@ -275,7 +275,7 @@ export default function AnalysisPage() {
         {stock.verdict && (
           <Card className="mb-6">
             <h2 className="text-lg font-semibold text-white mb-1">
-              Защо препоръчваме <span className="text-blue-400">{stock.verdict}</span>?
+              Защо препоръчваме <span className="text-blue-400">{toRenderable(stock.verdict)}</span>?
             </h2>
             <p className="text-sm text-slate-500 mb-4">AI Score: {aiScoreText}/100 — базирано на претеглена комбинация от фактори</p>
             {xaiReasons.length > 0 ? (
@@ -284,7 +284,7 @@ export default function AnalysisPage() {
                   <div key={i} className="flex items-center justify-between gap-4 bg-slate-900/50 rounded-lg px-4 py-2.5">
                     <span className="text-sm text-slate-300 flex items-center gap-2">
                       <span>{reason?.positive ? '✅' : '❌'}</span>
-                      {reason?.label || ''}
+                      {toRenderable(reason?.label)}
                     </span>
                     <span className={`text-sm font-semibold ${reason?.positive ? 'text-green-400' : 'text-red-400'}`}>
                       {toFiniteNumber(reason?.points) !== null ? `${reason.points > 0 ? '+' : ''}${reason.points} т.` : ''}
@@ -374,10 +374,10 @@ export default function AnalysisPage() {
                   className="block bg-slate-900/50 hover:bg-slate-900 rounded-lg px-4 py-3 transition-colors"
                 >
                   <div className="flex items-center justify-between gap-3 mb-1">
-                    <span className="text-xs text-blue-400 font-medium">{article?.source || ''}</span>
+                    <span className="text-xs text-blue-400 font-medium">{toRenderable(article?.source)}</span>
                     {article?.publishedAt && <span className="text-xs text-slate-500">{timeAgo(article.publishedAt)}</span>}
                   </div>
-                  <h3 className="text-sm text-slate-200 font-medium">{article?.title || ''}</h3>
+                  <h3 className="text-sm text-slate-200 font-medium">{toRenderable(article?.title)}</h3>
                 </a>
               ))}
             </div>
