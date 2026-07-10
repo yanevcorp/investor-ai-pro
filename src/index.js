@@ -58,9 +58,20 @@ serviceWorkerRegistration.register({
 });
 
 if ('serviceWorker' in navigator) {
+  // service-worker.js calls clientsClaim(), which makes a service worker
+  // take control of the current tab immediately on its *first* activation
+  // too — not just when a new version replaces an old one. That fires this
+  // same controllerchange event on literally every first-ever visit, ~1s
+  // after the page loads. Reloading unconditionally meant a brand-new
+  // visitor's page could reload itself out from under them (wiping
+  // whatever they'd already started typing) for no reason — nothing was
+  // stale yet, there was nothing to pick up. Only reload when this page
+  // load was already being served by a *previous* controller, which means
+  // a genuinely new version just took over from it.
+  const hadControllerOnLoad = Boolean(navigator.serviceWorker.controller);
   let refreshing = false;
   navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (refreshing) return;
+    if (!hadControllerOnLoad || refreshing) return;
     refreshing = true;
     window.location.reload();
   });
