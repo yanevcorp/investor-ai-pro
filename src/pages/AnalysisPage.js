@@ -17,6 +17,19 @@ const TABS = [
   { key: 'predictions', label: 'Predictions' },
 ];
 
+// ETFs don't have "financials" in the equity sense — the backend populates
+// that same details.financials slot with top holdings for an ETF instead,
+// so only the tab label needs to change, not the data plumbing.
+function getTabsFor(isEtf) {
+  if (!isEtf) return TABS;
+  return TABS.map((t) => (t.key === 'financials' ? { ...t, label: 'Holdings' } : t));
+}
+
+const MARKET_SESSION_LABELS = {
+  'pre-market': 'Преди борсата',
+  'after-hours': 'След борсата',
+};
+
 function toFiniteNumber(value) {
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
@@ -214,6 +227,8 @@ export default function AnalysisPage() {
   const xaiReasons = Array.isArray(details.xaiReasons) ? details.xaiReasons.filter(Boolean) : [];
   const newsArticles = Array.isArray(details.news) ? details.news.filter(Boolean) : [];
   const activeTabMetrics = Array.isArray(details[tab]) ? details[tab].filter(Boolean) : [];
+  const tabs = getTabsFor(Boolean(stock.isEtf));
+  const sessionLabel = MARKET_SESSION_LABELS[stock.marketSession] || null;
 
   const probabilityData = ['1W', '1M', '3M'].map((period) => ({
     period,
@@ -230,12 +245,20 @@ export default function AnalysisPage() {
           <div>
             <div className="flex items-center gap-3 mb-1">
               <h1 className="text-2xl font-bold text-white">{toRenderable(stock.symbol, sym)}</h1>
+              {stock.isEtf && (
+                <span className="text-[10px] font-bold text-blue-400 border border-blue-500/30 bg-blue-500/10 rounded px-1.5 py-0.5">
+                  ETF
+                </span>
+              )}
               {toRenderable(stock.name) && <span className="text-slate-400 text-sm">{toRenderable(stock.name)}</span>}
             </div>
             {toRenderable(stock.sector) && <p className="text-xs text-slate-500">{toRenderable(stock.sector)}</p>}
           </div>
           <div className="flex items-center gap-4">
             <div className="text-right">
+              {sessionLabel && (
+                <div className="text-[11px] font-medium text-amber-400/90 mb-0.5">{sessionLabel}</div>
+              )}
               <div className="text-2xl font-bold text-white">{priceText}</div>
               <div className={`text-sm font-medium ${changeInfo.isPositive ? 'text-green-400' : 'text-red-400'}`}>
                 {changeInfo.isPositive ? '▲' : '▼'} {changeInfo.text}
@@ -338,7 +361,7 @@ export default function AnalysisPage() {
 
         {/* Tabs */}
         <div className="flex flex-wrap gap-1 mb-4 bg-slate-800/60 border border-slate-700 rounded-xl p-1">
-          {TABS.map((t) => (
+          {tabs.map((t) => (
             <button
               key={t.key}
               onClick={() => setTab(t.key)}

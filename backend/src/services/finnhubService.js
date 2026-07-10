@@ -4,6 +4,7 @@ const cache = require('./cache');
 const BASE_URL = 'https://finnhub.io/api/v1';
 const QUOTE_TTL_MS = 30 * 1000;
 const PROFILE_TTL_MS = 24 * 60 * 60 * 1000;
+const SEARCH_TTL_MS = 5 * 60 * 1000;
 
 async function getQuote(symbol) {
   const cacheKey = `finnhub:quote:${symbol}`;
@@ -60,4 +61,19 @@ async function getProfile(symbol) {
   return profile;
 }
 
-module.exports = { getQuote, getProfile };
+async function searchSymbols(query) {
+  const cacheKey = `finnhub:search:${query.toLowerCase()}`;
+  const cached = cache.get(cacheKey);
+  if (cached) return cached;
+
+  const { data } = await axios.get(`${BASE_URL}/search`, {
+    params: { q: query, token: process.env.FINNHUB_API_KEY },
+    timeout: 5000,
+  });
+
+  const results = Array.isArray(data?.result) ? data.result : [];
+  cache.set(cacheKey, results, SEARCH_TTL_MS);
+  return results;
+}
+
+module.exports = { getQuote, getProfile, searchSymbols };

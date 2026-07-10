@@ -47,6 +47,62 @@ test('renders full stock data', async () => {
   expect(screen.getByText('$123.45')).toBeInTheDocument();
 });
 
+test('shows an ETF badge, Holdings tab label, and market session label for an ETF', async () => {
+  api.get.mockResolvedValueOnce({
+    data: {
+      stock: {
+        symbol: 'QQQ',
+        name: 'Invesco QQQ Trust',
+        price: 500,
+        change: -1.2,
+        changePercent: -0.24,
+        verdict: 'HOLD',
+        aiScore: 55,
+        isEtf: true,
+        marketSession: 'after-hours',
+        analysis: {
+          overview: [{ label: 'Разходен коефициент (TER)', value: '0.20%', good: true }],
+          financials: [{ label: 'NVIDIA CORP', value: '9.1%', good: true }],
+        },
+      },
+    },
+  });
+
+  renderAnalysisPage('QQQ');
+
+  expect(await screen.findByText('QQQ')).toBeInTheDocument();
+  expect(screen.getByText('ETF')).toBeInTheDocument();
+  expect(screen.getByText('Holdings')).toBeInTheDocument();
+  expect(screen.getByText('След борсата')).toBeInTheDocument();
+});
+
+test('does not show an ETF badge or session label for a regular equity', async () => {
+  api.get.mockResolvedValueOnce({
+    data: {
+      stock: {
+        symbol: 'AAPL',
+        name: 'Apple Inc',
+        price: 200,
+        change: 1,
+        changePercent: 0.5,
+        verdict: 'BUY',
+        aiScore: 80,
+        isEtf: false,
+        marketSession: 'regular',
+        analysis: { overview: [{ label: 'P/E', value: '30', good: true }] },
+      },
+    },
+  });
+
+  renderAnalysisPage('AAPL');
+
+  expect(await screen.findByText('AAPL')).toBeInTheDocument();
+  expect(screen.queryByText('ETF')).not.toBeInTheDocument();
+  expect(screen.getByText('Financials')).toBeInTheDocument();
+  expect(screen.queryByText('След борсата')).not.toBeInTheDocument();
+  expect(screen.queryByText('Преди борсата')).not.toBeInTheDocument();
+});
+
 test('renders without crashing when price/change/analysis are missing', async () => {
   api.get.mockResolvedValueOnce({
     data: {

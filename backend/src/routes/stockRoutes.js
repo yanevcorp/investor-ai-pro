@@ -1,9 +1,10 @@
 const express = require('express');
-const { listStocks, getStock } = require('../controllers/stockController');
+const { listStocks, getStock, searchStocks } = require('../controllers/stockController');
 
 const router = express.Router();
 
 router.get('/', listStocks);
+router.get('/search', searchStocks);
 router.get('/:symbol', getStock);
 
 module.exports = router;

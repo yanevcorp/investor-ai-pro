@@ -3,6 +3,8 @@ const finnhubService = require('../services/finnhubService');
 const alphaVantageService = require('../services/alphaVantageService');
 const newsService = require('../services/newsService');
 const { buildGenericAnalysis } = require('../utils/buildAnalysis');
+const { isEtfSymbol } = require('../utils/etf');
+const { getMarketSession } = require('../utils/marketSession');
 
 function avNumber(value) {
   if (value === undefined || value === null || value === 'None' || value === '-') return null;
@@ -70,10 +72,49 @@ function buildFinancialsFromFundamentals(f) {
   ];
 }
 
-async function getFundamentals(stock) {
+function buildEtfOverview(etf) {
+  const netAssets = avNumber(etf.net_assets);
+  const expenseRatio = avNumber(etf.net_expense_ratio);
+  const dividendYield = avNumber(etf.dividend_yield);
+
+  return [
+    { label: 'Нетни активи', value: formatMoney(netAssets), good: true },
+    {
+      label: 'Разходен коефициент (TER)',
+      value: expenseRatio !== null ? `${(expenseRatio * 100).toFixed(2)}%` : 'N/A',
+      good: expenseRatio !== null && expenseRatio < 0.005,
+    },
+    {
+      label: 'Дивидентна доходност',
+      value: dividendYield ? `${(dividendYield * 100).toFixed(2)}%` : 'Няма',
+      good: true,
+    },
+    { label: 'Ливъридж', value: etf.leveraged === 'YES' ? 'Да' : 'Не', good: etf.leveraged !== 'YES' },
+    { label: 'Дата на стартиране', value: etf.inception_date || 'N/A', good: true },
+  ];
+}
+
+function buildEtfHoldings(etf) {
+  const holdings = Array.isArray(etf.holdings) ? etf.holdings.slice(0, 10) : [];
+  if (holdings.length === 0) {
+    return [{ label: 'Позиции', value: 'N/A', good: true }];
+  }
+  return holdings.map((h) => {
+    const weight = avNumber(h.weight);
+    return {
+      label: h.description || h.symbol || '—',
+      value: weight !== null ? `${(weight * 100).toFixed(2)}%` : 'N/A',
+      good: true,
+    };
+  });
+}
+
+async function getFundamentals(stock, isEtf) {
   if (stock.fundamentals) return stock.fundamentals;
   try {
-    const fundamentals = await alphaVantageService.getOverview(stock.symbol);
+    const fundamentals = isEtf
+      ? await alphaVantageService.getEtfProfile(stock.symbol)
+      : await alphaVantageService.getOverview(stock.symbol);
     stock.fundamentals = fundamentals;
     stock.fundamentalsFetchedAt = new Date();
     await stock.save();
@@ -198,12 +239,16 @@ async function getStock(req, res, next) {
     }
 
     const obj = stock.toObject();
+    const isEtf = isEtfSymbol(symbol);
+    obj.isEtf = isEtf;
+    obj.marketSession = getMarketSession();
 
     try {
       const quote = await finnhubService.getQuote(symbol);
       obj.price = quote.price;
       obj.change = quote.change;
       obj.changePercent = quote.changePercent;
+      obj.previousClose = quote.previousClose;
     } catch (err) {
       // keep seeded/provisioned fallback
     }
@@ -216,11 +261,16 @@ async function getStock(req, res, next) {
       // keep seeded/provisioned fallback
     }
 
-    const fundamentals = await getFundamentals(stock);
+    const fundamentals = await getFundamentals(stock, isEtf);
     if (fundamentals) {
       obj.analysis = obj.analysis || {};
-      obj.analysis.overview = buildOverviewFromFundamentals(fundamentals);
-      obj.analysis.financials = buildFinancialsFromFundamentals(fundamentals);
+      if (isEtf) {
+        obj.analysis.overview = buildEtfOverview(fundamentals);
+        obj.analysis.financials = buildEtfHoldings(fundamentals);
+      } else {
+        obj.analysis.overview = buildOverviewFromFundamentals(fundamentals);
+        obj.analysis.financials = buildFinancialsFromFundamentals(fundamentals);
+      }
     }
 
     try {
@@ -237,4 +287,25 @@ async function getStock(req, res, next) {
   }
 }
 
-module.exports = { listStocks, getStock };
+async function searchStocks(req, res, next) {
+  try {
+    const q = (req.query.q || '').trim();
+    if (!q) return res.json({ results: [] });
+
+    const raw = await finnhubService.searchSymbols(q);
+    const results = raw.slice(0, 10).map((r) => ({
+      symbol: r.displaySymbol || r.symbol,
+      name: r.description || '',
+      type: r.type || '',
+      isEtf: isEtfSymbol(r.displaySymbol || r.symbol) || r.type === 'ETP',
+    }));
+
+    res.json({ results });
+  } catch (err) {
+    // A flaky/rate-limited search should degrade to "no suggestions",
+    // not break the page the search bar lives on.
+    res.json({ results: [] });
+  }
+}
+
+module.exports = { listStocks, getStock, searchStocks };

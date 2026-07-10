@@ -30,4 +30,22 @@ async function getOverview(symbol) {
   return data;
 }
 
-module.exports = { getOverview };
+async function getEtfProfile(symbol) {
+  const cacheKey = `alphavantage:etfprofile:${symbol}`;
+  const cached = cache.get(cacheKey);
+  if (cached) return cached;
+
+  const { data } = await axios.get(BASE_URL, {
+    params: { function: 'ETF_PROFILE', symbol, apikey: process.env.ALPHA_VANTAGE_API_KEY },
+    timeout: 8000,
+  });
+
+  if (!data || (!data.net_assets && !Array.isArray(data.holdings))) {
+    throw new Error(`No Alpha Vantage ETF profile for ${symbol}: ${data?.Note || data?.Information || 'empty response'}`);
+  }
+
+  cache.set(cacheKey, data, OVERVIEW_TTL_MS);
+  return data;
+}
+
+module.exports = { getOverview, getEtfProfile };

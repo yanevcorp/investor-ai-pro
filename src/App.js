@@ -9,10 +9,12 @@ import ScreenerPage from './pages/ScreenerPage';
 import WatchlistPage from './pages/WatchlistPage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
+import DisclaimerModal from './components/DisclaimerModal';
 
 function App() {
   return (
     <BrowserRouter>
+      <DisclaimerModal />
       <Toaster
         position="top-right"
         toastOptions={{
