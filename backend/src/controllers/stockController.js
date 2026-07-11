@@ -2,7 +2,7 @@ const Stock = require('../models/Stock');
 const finnhubService = require('../services/finnhubService');
 const alphaVantageService = require('../services/alphaVantageService');
 const newsService = require('../services/newsService');
-const anthropicService = require('../services/anthropicService');
+const groqService = require('../services/groqService');
 const { buildGenericAnalysis } = require('../utils/buildAnalysis');
 const { isEtfSymbol } = require('../utils/etf');
 const { getMarketSession } = require('../utils/marketSession');
@@ -390,12 +390,12 @@ async function searchStocks(req, res, next) {
   }
 }
 
-// Natural-language screener: Claude turns free-text queries (e.g. "Намери
-// подценени tech компании с дълг под 20%") into structured filters that get
-// applied against the Stock collection. Falls back to a plain symbol/name
-// regex match — same behavior as listStocks's search param — if Claude is
-// unavailable (no API key configured, rate-limited, etc.), so the endpoint
-// degrades instead of breaking the screener page.
+// Natural-language screener: Groq (llama-3.1-8b-instant) turns free-text queries
+// (e.g. "Намери подценени tech компании с дълг под 20%") into structured
+// filters that get applied against the Stock collection. Falls back to a
+// plain symbol/name regex match — same behavior as listStocks's search
+// param — if Groq is unavailable (no API key configured, rate-limited,
+// etc.), so the endpoint degrades instead of breaking the screener page.
 async function aiSearchStocks(req, res, next) {
   try {
     const query = String(req.body?.query || req.query.query || '').trim();
@@ -403,7 +403,7 @@ async function aiSearchStocks(req, res, next) {
 
     let filters = null;
     try {
-      filters = await anthropicService.parseScreenerQuery(query);
+      filters = await groqService.parseScreenerQuery(query);
     } catch (err) {
       filters = null;
     }
