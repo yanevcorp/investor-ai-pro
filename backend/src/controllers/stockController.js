@@ -319,6 +319,29 @@ async function getStock(req, res, next) {
   }
 }
 
+// Lightweight companion to getStock, for pages that poll for a live price
+// every 30-60s (AnalysisPage, Watchlist) — returns just the quote fields
+// instead of the full analysis payload (fundamentals, news, XAI reasons),
+// so frequent polling doesn't re-fetch/re-serialize all of that on every
+// tick.
+async function getStockQuote(req, res, next) {
+  const symbol = req.params.symbol.toUpperCase();
+  try {
+    const quote = await finnhubService.getQuote(symbol);
+    res.json({
+      symbol,
+      price: quote.price,
+      change: quote.change,
+      changePercent: quote.changePercent,
+      previousClose: quote.previousClose,
+      marketSession: getMarketSession(),
+      updatedAt: new Date().toISOString(),
+    });
+  } catch (err) {
+    res.status(503).json({ message: `No live quote available for ${symbol}` });
+  }
+}
+
 async function searchStocks(req, res, next) {
   try {
     const q = (req.query.q || '').trim();
@@ -368,4 +391,4 @@ async function getStockHistory(req, res, next) {
   }
 }
 
-module.exports = { listStocks, getStock, searchStocks, getStockHistory, provisionStock };
+module.exports = { listStocks, getStock, getStockQuote, searchStocks, getStockHistory, provisionStock };

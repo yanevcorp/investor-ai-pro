@@ -5,6 +5,57 @@ import { Card, VerdictBadge } from '../components/ui';
 import Sparkline from '../components/Sparkline';
 import ExpandedChartModal from '../components/ExpandedChartModal';
 import useStockHistories from '../hooks/useStockHistories';
+import useLiveQuotes from '../hooks/useLiveQuotes';
+import useFlashOnChange from '../hooks/useFlashOnChange';
+
+const LIVE_QUOTE_INTERVAL_MS = 60000;
+
+// One row per symbol so useFlashOnChange (a hook) can be called per-item
+// without violating the rules of hooks inside the list's .map().
+function WatchlistRow({ sym, stock, history, liveQuote, onExpand, onRemove }) {
+  const price = liveQuote?.price ?? stock?.price ?? null;
+  const changePercent = liveQuote?.changePercent ?? stock?.changePercent ?? null;
+  const flash = useFlashOnChange(price);
+  const isPositive = price != null ? (liveQuote?.change ?? stock?.change ?? 0) >= 0 : true;
+
+  // The sparkline's history is daily-resolution (see historyService), so a
+  // 60s poll can't meaningfully redraw the whole line — but replacing its
+  // last point with the live price keeps that point genuinely current and
+  // updates the line's up/down color in real time, without fabricating
+  // intraday data we don't have.
+  const closes = Array.isArray(history?.sparkline) ? history.sparkline : [];
+  const liveCloses = price != null && closes.length > 0 ? [...closes.slice(0, -1), price] : closes;
+
+  return (
+    <Card className="hover:border-slate-600 transition-colors">
+      <div className="flex items-center justify-between gap-4">
+        <Link to={`/analysis/${sym}`} className="flex-1 min-w-0">
+          <div className="text-white font-semibold">{sym}</div>
+          <div className="text-sm text-slate-500">{stock ? stock.name : 'Няма данни в API-то'}</div>
+        </Link>
+        <Sparkline closes={liveCloses} onClick={onExpand} title={`Виж пълна графика за ${sym}`} />
+        {stock && (
+          <>
+            <div
+              className={`text-right rounded-md px-1 -mx-1 ${
+                flash === 'up' ? 'animate-flash-up' : flash === 'down' ? 'animate-flash-down' : ''
+              }`}
+            >
+              <div className="text-white font-medium">${price != null ? price.toFixed(2) : 'N/A'}</div>
+              <div className={`text-sm ${isPositive ? 'text-green-400' : 'text-red-400'}`}>
+                {isPositive ? '▲' : '▼'} {changePercent != null ? Math.abs(changePercent).toFixed(2) : '0.00'}%
+              </div>
+            </div>
+            <VerdictBadge verdict={stock.verdict} />
+          </>
+        )}
+        <button onClick={onRemove} className="text-slate-500 hover:text-red-400 text-sm transition-colors" title="Премахни">
+          ✕
+        </button>
+      </div>
+    </Card>
+  );
+}
 
 export default function WatchlistPage() {
   const [symbols, setSymbols] = useState([]);
@@ -14,6 +65,7 @@ export default function WatchlistPage() {
   const [newSymbol, setNewSymbol] = useState('');
   const [expandedSymbol, setExpandedSymbol] = useState(null);
   const historiesBySymbol = useStockHistories(symbols);
+  const liveQuotesBySymbol = useLiveQuotes(symbols, LIVE_QUOTE_INTERVAL_MS);
 
   const load = async () => {
     setLoading(true);
@@ -79,43 +131,17 @@ export default function WatchlistPage() {
           <p className="text-sm text-slate-500">Watchlist-ът е празен.</p>
         ) : (
           <div className="space-y-3">
-            {symbols.map((sym) => {
-              const stock = stocksBySymbol[sym];
-              const isPositive = stock ? stock.change >= 0 : true;
-              return (
-                <Card key={sym} className="hover:border-slate-600 transition-colors">
-                  <div className="flex items-center justify-between gap-4">
-                    <Link to={`/analysis/${sym}`} className="flex-1 min-w-0">
-                      <div className="text-white font-semibold">{sym}</div>
-                      <div className="text-sm text-slate-500">{stock ? stock.name : 'Няма данни в API-то'}</div>
-                    </Link>
-                    <Sparkline
-                      closes={historiesBySymbol[sym]?.sparkline}
-                      onClick={() => setExpandedSymbol(sym)}
-                      title={`Виж пълна графика за ${sym}`}
-                    />
-                    {stock && (
-                      <>
-                        <div className="text-right">
-                          <div className="text-white font-medium">${stock.price.toFixed(2)}</div>
-                          <div className={`text-sm ${isPositive ? 'text-green-400' : 'text-red-400'}`}>
-                            {isPositive ? '▲' : '▼'} {Math.abs(stock.changePercent).toFixed(2)}%
-                          </div>
-                        </div>
-                        <VerdictBadge verdict={stock.verdict} />
-                      </>
-                    )}
-                    <button
-                      onClick={() => handleRemove(sym)}
-                      className="text-slate-500 hover:text-red-400 text-sm transition-colors"
-                      title="Премахни"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                </Card>
-              );
-            })}
+            {symbols.map((sym) => (
+              <WatchlistRow
+                key={sym}
+                sym={sym}
+                stock={stocksBySymbol[sym]}
+                history={historiesBySymbol[sym]}
+                liveQuote={liveQuotesBySymbol[sym]}
+                onExpand={() => setExpandedSymbol(sym)}
+                onRemove={() => handleRemove(sym)}
+              />
+            ))}
           </div>
         )}
       </div>

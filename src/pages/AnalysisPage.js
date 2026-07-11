@@ -7,6 +7,10 @@ import { timeAgo } from '../utils/time';
 import { Card, VerdictBadge, MetricRow, toRenderable } from '../components/ui';
 import ErrorBoundary from '../components/ErrorBoundary';
 import SimulatorModal from '../components/SimulatorModal';
+import useLiveQuotes from '../hooks/useLiveQuotes';
+import useFlashOnChange from '../hooks/useFlashOnChange';
+
+const LIVE_QUOTE_INTERVAL_MS = 30000;
 
 const TABS = [
   { key: 'overview', label: 'Overview' },
@@ -113,6 +117,7 @@ export default function AnalysisPage() {
   const { symbol } = useParams();
   const sym = (symbol || '').toUpperCase();
   const [stock, setStock] = useState(null);
+  const [stockLoadedAt, setStockLoadedAt] = useState(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [error, setError] = useState(false);
@@ -120,6 +125,15 @@ export default function AnalysisPage() {
   const [addingToWatchlist, setAddingToWatchlist] = useState(false);
   const [showPortfolioForm, setShowPortfolioForm] = useState(false);
   const [showSimulator, setShowSimulator] = useState(false);
+
+  // Polls the app's own backend rather than a direct Finnhub WebSocket —
+  // see useLiveQuotes for why. Hooks must run unconditionally every
+  // render, so the live price (and the flash it drives) is derived here,
+  // before the loading/error/notFound early returns below.
+  const liveQuotes = useLiveQuotes([sym], LIVE_QUOTE_INTERVAL_MS);
+  const liveQuote = liveQuotes[sym];
+  const currentPrice = liveQuote?.price ?? stock?.price ?? null;
+  const priceFlash = useFlashOnChange(currentPrice);
 
   const loadStock = useCallback(() => {
     let cancelled = false;
@@ -135,6 +149,7 @@ export default function AnalysisPage() {
         const data = res.data?.stock;
         if (data && typeof data === 'object') {
           setStock(data);
+          setStockLoadedAt(new Date().toISOString());
         } else {
           setError(true);
         }
@@ -223,14 +238,16 @@ export default function AnalysisPage() {
   }
 
   const details = (stock.analysis && typeof stock.analysis === 'object') ? stock.analysis : {};
-  const priceText = formatPrice(stock.price);
-  const changeInfo = formatChange(stock.change, stock.changePercent);
+  const marketSession = liveQuote?.marketSession ?? stock.marketSession;
+  const lastUpdatedAt = liveQuote?.updatedAt ?? stockLoadedAt;
+  const priceText = formatPrice(currentPrice);
+  const changeInfo = formatChange(liveQuote?.change ?? stock.change, liveQuote?.changePercent ?? stock.changePercent);
   const aiScoreText = toFiniteNumber(stock.aiScore) === null ? 'N/A' : stock.aiScore;
   const xaiReasons = Array.isArray(details.xaiReasons) ? details.xaiReasons.filter(Boolean) : [];
   const newsArticles = Array.isArray(details.news) ? details.news.filter(Boolean) : [];
   const activeTabMetrics = Array.isArray(details[tab]) ? details[tab].filter(Boolean) : [];
   const tabs = getTabsFor(Boolean(stock.isEtf));
-  const sessionLabel = MARKET_SESSION_LABELS[stock.marketSession] || null;
+  const sessionLabel = MARKET_SESSION_LABELS[marketSession] || null;
 
   const probabilityData = ['1W', '1M', '3M'].map((period) => ({
     period,
@@ -258,13 +275,26 @@ export default function AnalysisPage() {
           </div>
           <div className="flex items-center gap-4">
             <div className="text-right">
-              {sessionLabel && (
-                <div className="text-[11px] font-medium text-amber-400/90 mb-0.5">{sessionLabel}</div>
-              )}
-              <div className="text-2xl font-bold text-white">{priceText}</div>
+              <div className="flex items-center justify-end gap-1.5 mb-0.5">
+                {marketSession === 'regular' && (
+                  <span className="inline-flex items-center gap-1 text-[11px] font-bold text-red-400">
+                    <span className="animate-pulse">🔴</span> LIVE
+                  </span>
+                )}
+                {marketSession === 'closed' && <span className="text-[11px] font-medium text-slate-500">Затворено</span>}
+                {sessionLabel && <span className="text-[11px] font-medium text-amber-400/90">{sessionLabel}</span>}
+              </div>
+              <div
+                className={`text-2xl font-bold text-white rounded-md px-1 -mx-1 ${
+                  priceFlash === 'up' ? 'animate-flash-up' : priceFlash === 'down' ? 'animate-flash-down' : ''
+                }`}
+              >
+                {priceText}
+              </div>
               <div className={`text-sm font-medium ${changeInfo.isPositive ? 'text-green-400' : 'text-red-400'}`}>
                 {changeInfo.isPositive ? '▲' : '▼'} {changeInfo.text}
               </div>
+              {lastUpdatedAt && <div className="text-[10px] text-slate-600 mt-0.5">Обновено {timeAgo(lastUpdatedAt)}</div>}
             </div>
             {stock.verdict && <VerdictBadge verdict={stock.verdict} className="text-sm px-4 py-2" />}
           </div>
