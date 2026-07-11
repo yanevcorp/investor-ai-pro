@@ -135,6 +135,7 @@ export default function PortfolioPage() {
     weight: h.weight,
     sector: stocksBySymbol[h.symbol]?.sector || '',
     drawdownPercent: historiesBySymbol[h.symbol]?.drawdownPercent ?? null,
+    history: historiesBySymbol[h.symbol]?.history ?? null,
   }));
 
   return (
