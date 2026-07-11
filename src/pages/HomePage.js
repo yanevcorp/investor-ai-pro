@@ -6,12 +6,12 @@ const QUICK_SUGGESTIONS = ['RKLB', 'PLTR', 'MSTR', 'AAPL', 'TSLA'];
 const SEARCH_DEBOUNCE_MS = 300;
 
 const NL_EXAMPLE_QUERIES = [
-  'Намери подценени компании от киберсигурността с дълг под 20%',
-  'Сравни TSLA и NVDA по рентабилност',
-  'Покажи ETF-и с нисък разход',
-  'Акции с insider buying тази седмица',
+  'Намери подценени tech компании с нисък дълг...',
+  'Сравни TSLA и NVDA по рентабилност...',
+  'Акции с insider buying тази седмица...',
+  'ETF-и с нисък разход и висок дивидент...',
 ];
-const PLACEHOLDER_ROTATE_MS = 3500;
+const PLACEHOLDER_ROTATE_MS = 3000;
 
 export default function HomePage() {
   const navigate = useNavigate();
@@ -177,7 +177,7 @@ export default function HomePage() {
             // viewport enough that this dropdown's position can overlap the
             // fixed bottom nav — at a lower z-index it rendered completely
             // hidden behind that opaque bar instead of on top of it.
-            <ul className="absolute left-0 right-0 mt-2 bg-slate-800 border border-slate-700 rounded-xl shadow-2xl overflow-hidden z-[60] text-left max-h-80 overflow-y-auto">
+            <ul className="absolute left-0 right-0 mt-2 bg-slate-800 border border-slate-700 rounded-xl shadow-2xl overflow-hidden z-[60] text-left max-h-80 overflow-y-auto animate-fade-in">
               {suggestions.map((s, i) => (
                 <li key={`${s.symbol}-${i}`}>
                   <button
@@ -190,15 +190,15 @@ export default function HomePage() {
                     <span className="flex items-center gap-2 min-w-0">
                       <span className="font-semibold text-white shrink-0">{s.symbol}</span>
                       <span className="text-sm text-slate-400 truncate">{s.name}</span>
-                    </span>
-                    <span className="shrink-0 flex items-center gap-1.5">
-                      {s.isEtf && (
-                        <span className="text-[10px] font-bold text-blue-400 border border-blue-500/30 bg-blue-500/10 rounded px-1.5 py-0.5">
-                          ETF
-                        </span>
+                      {s.exchange && (
+                        <span className="text-sm text-slate-500 shrink-0">({s.exchange})</span>
                       )}
-                      {s.type && <span className="text-xs text-slate-500">{s.type}</span>}
                     </span>
+                    {s.isEtf && (
+                      <span className="text-[10px] font-bold text-blue-400 border border-blue-500/30 bg-blue-500/10 rounded px-1.5 py-0.5 shrink-0">
+                        ETF
+                      </span>
+                    )}
                   </button>
                 </li>
               ))}

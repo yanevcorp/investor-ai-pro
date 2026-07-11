@@ -8,6 +8,36 @@ const { getMarketSession } = require('../utils/marketSession');
 const { getOrFetchHistory } = require('../services/historyService');
 const { sparklineFrom, maxDrawdownPercent } = require('../utils/portfolioRisk');
 
+// Finnhub's /search endpoint doesn't return an exchange field, but foreign
+// listings carry a dot-suffix on the symbol (e.g. "2788.T", "603020.SS")
+// that reliably identifies the exchange — a plain symbol with no suffix is
+// always a US listing. Used to label search results without guessing.
+const EXCHANGE_SUFFIXES = {
+  T: 'Tokyo',
+  SS: 'Shanghai',
+  SZ: 'Shenzhen',
+  HK: 'Hong Kong',
+  L: 'London',
+  TO: 'Toronto',
+  V: 'TSX Venture',
+  DE: 'Xetra',
+  PA: 'Paris',
+  AS: 'Amsterdam',
+  MI: 'Milan',
+  SW: 'Swiss',
+  KL: 'Kuala Lumpur',
+  AX: 'Australia',
+  NS: 'NSE India',
+  BO: 'BSE India',
+};
+
+function exchangeFromSymbol(symbol) {
+  const parts = String(symbol || '').split('.');
+  if (parts.length < 2) return 'US';
+  const suffix = parts[parts.length - 1].toUpperCase();
+  return EXCHANGE_SUFFIXES[suffix] || suffix;
+}
+
 function avNumber(value) {
   if (value === undefined || value === null || value === 'None' || value === '-') return null;
   const n = Number(value);
@@ -295,12 +325,16 @@ async function searchStocks(req, res, next) {
     if (!q) return res.json({ results: [] });
 
     const raw = await finnhubService.searchSymbols(q);
-    const results = raw.slice(0, 10).map((r) => ({
-      symbol: r.displaySymbol || r.symbol,
-      name: r.description || '',
-      type: r.type || '',
-      isEtf: isEtfSymbol(r.displaySymbol || r.symbol) || r.type === 'ETP',
-    }));
+    const results = raw.slice(0, 8).map((r) => {
+      const symbol = r.displaySymbol || r.symbol;
+      return {
+        symbol,
+        name: r.description || '',
+        type: r.type || '',
+        exchange: exchangeFromSymbol(symbol),
+        isEtf: isEtfSymbol(symbol) || r.type === 'ETP',
+      };
+    });
 
     res.json({ results });
   } catch (err) {
