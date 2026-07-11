@@ -2,6 +2,7 @@ const Stock = require('../models/Stock');
 const finnhubService = require('../services/finnhubService');
 const alphaVantageService = require('../services/alphaVantageService');
 const newsService = require('../services/newsService');
+const anthropicService = require('../services/anthropicService');
 const { buildGenericAnalysis } = require('../utils/buildAnalysis');
 const { isEtfSymbol } = require('../utils/etf');
 const { getMarketSession } = require('../utils/marketSession');
@@ -156,6 +157,25 @@ async function getFundamentals(stock, isEtf) {
   }
 }
 
+// Finnhub's free-tier /quote has no dedicated pre-market/after-hours price
+// field (see utils/marketSession.js) — `c` already tracks the latest trade
+// including extended-hours activity, and `d`/`dp` are already computed off
+// that same trade vs. the prior session's close. So "extended price" reuses
+// those fields rather than fabricating a second number, and is only
+// surfaced (session-labeled, with a last-trade timestamp) when the current
+// session is actually pre-market or after-hours.
+function buildExtendedPrice(quote, marketSession) {
+  if (marketSession !== 'pre-market' && marketSession !== 'after-hours') return null;
+  if (typeof quote?.price !== 'number') return null;
+  return {
+    session: marketSession,
+    price: quote.price,
+    change: quote.change,
+    changePercent: quote.changePercent,
+    asOf: quote.timestamp || null,
+  };
+}
+
 function deriveVerdict(changePercent) {
   if (changePercent >= 10) return 'STRONG BUY';
   if (changePercent >= 2) return 'BUY';
@@ -281,6 +301,7 @@ async function getStock(req, res, next) {
       obj.change = quote.change;
       obj.changePercent = quote.changePercent;
       obj.previousClose = quote.previousClose;
+      obj.extendedPrice = buildExtendedPrice(quote, obj.marketSession);
     } catch (err) {
       // keep seeded/provisioned fallback
     }
@@ -328,13 +349,15 @@ async function getStockQuote(req, res, next) {
   const symbol = req.params.symbol.toUpperCase();
   try {
     const quote = await finnhubService.getQuote(symbol);
+    const marketSession = getMarketSession();
     res.json({
       symbol,
       price: quote.price,
       change: quote.change,
       changePercent: quote.changePercent,
       previousClose: quote.previousClose,
-      marketSession: getMarketSession(),
+      marketSession,
+      extendedPrice: buildExtendedPrice(quote, marketSession),
       updatedAt: new Date().toISOString(),
     });
   } catch (err) {
@@ -367,6 +390,90 @@ async function searchStocks(req, res, next) {
   }
 }
 
+// Natural-language screener: Claude turns free-text queries (e.g. "Намери
+// подценени tech компании с дълг под 20%") into structured filters that get
+// applied against the Stock collection. Falls back to a plain symbol/name
+// regex match — same behavior as listStocks's search param — if Claude is
+// unavailable (no API key configured, rate-limited, etc.), so the endpoint
+// degrades instead of breaking the screener page.
+async function aiSearchStocks(req, res, next) {
+  try {
+    const query = String(req.body?.query || req.query.query || '').trim();
+    if (!query) return res.json({ count: 0, stocks: [], summary: '', unsupportedCriteria: [] });
+
+    let filters = null;
+    try {
+      filters = await anthropicService.parseScreenerQuery(query);
+    } catch (err) {
+      filters = null;
+    }
+
+    const mongoFilter = {};
+    if (filters) {
+      const or = [];
+      (filters.sectorKeywords || []).forEach((kw) => kw && or.push({ sector: new RegExp(kw, 'i') }));
+      (filters.nameKeywords || []).forEach((kw) => {
+        if (!kw) return;
+        or.push({ name: new RegExp(kw, 'i') }, { symbol: new RegExp(kw, 'i') });
+      });
+      if (or.length) mongoFilter.$or = or;
+      if (Array.isArray(filters.verdicts) && filters.verdicts.length) {
+        mongoFilter.verdict = { $in: filters.verdicts };
+      }
+      if (typeof filters.minAiScore === 'number') mongoFilter.aiScore = { $gte: filters.minAiScore };
+      if (typeof filters.minChangePercent === 'number' || typeof filters.maxChangePercent === 'number') {
+        mongoFilter.changePercent = {};
+        if (typeof filters.minChangePercent === 'number') mongoFilter.changePercent.$gte = filters.minChangePercent;
+        if (typeof filters.maxChangePercent === 'number') mongoFilter.changePercent.$lte = filters.maxChangePercent;
+      }
+    } else {
+      mongoFilter.$or = [{ symbol: new RegExp(query, 'i') }, { name: new RegExp(query, 'i') }];
+    }
+
+    let stocks = await Stock.find(mongoFilter).select('-analysis').limit(50).sort('-aiScore');
+
+    // isEtf and expense ratio aren't queryable Mongo fields (isEtf is
+    // derived from the symbol; expense ratio lives inside the cached
+    // fundamentals blob), so those two filter in-memory after the DB query.
+    if (filters?.isEtf === true) stocks = stocks.filter((s) => isEtfSymbol(s.symbol));
+    if (filters?.isEtf === false) stocks = stocks.filter((s) => !isEtfSymbol(s.symbol));
+    if (typeof filters?.maxExpenseRatioPercent === 'number') {
+      stocks = stocks.filter((s) => {
+        const ratio = avNumber(s.fundamentals?.net_expense_ratio);
+        return ratio === null ? true : ratio * 100 <= filters.maxExpenseRatioPercent;
+      });
+    }
+
+    stocks = stocks.slice(0, 20);
+
+    const withLiveQuotes = await Promise.all(
+      stocks.map(async (stockDoc) => {
+        const obj = stockDoc.toObject();
+        delete obj.analysis;
+        delete obj.fundamentals;
+        try {
+          const quote = await finnhubService.getQuote(obj.symbol);
+          obj.price = quote.price;
+          obj.change = quote.change;
+          obj.changePercent = quote.changePercent;
+        } catch (err) {
+          // Finnhub unavailable/rate-limited — keep the stored fallback values
+        }
+        return obj;
+      })
+    );
+
+    res.json({
+      count: withLiveQuotes.length,
+      stocks: withLiveQuotes,
+      summary: filters?.summary || '',
+      unsupportedCriteria: filters?.unsupportedCriteria || [],
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function getStockHistory(req, res, next) {
   try {
     const symbol = req.params.symbol.toUpperCase();
@@ -391,4 +498,12 @@ async function getStockHistory(req, res, next) {
   }
 }
 
-module.exports = { listStocks, getStock, getStockQuote, searchStocks, getStockHistory, provisionStock };
+module.exports = {
+  listStocks,
+  getStock,
+  getStockQuote,
+  searchStocks,
+  aiSearchStocks,
+  getStockHistory,
+  provisionStock,
+};

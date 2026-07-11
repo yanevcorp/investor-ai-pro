@@ -28,6 +28,10 @@ async function getQuote(symbol) {
     low: data.l,
     open: data.o,
     previousClose: data.pc,
+    // Unix seconds of the last trade Finnhub has seen for this symbol —
+    // during pre-market/after-hours this is the extended-hours print time,
+    // used to show "as of HH:MM" next to the extended-hours price.
+    timestamp: data.t ? new Date(data.t * 1000).toISOString() : null,
   };
 
   cache.set(cacheKey, quote, QUOTE_TTL_MS);

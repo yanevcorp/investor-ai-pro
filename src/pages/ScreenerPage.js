@@ -3,10 +3,19 @@ import { useLocation, Link } from 'react-router-dom';
 import api from '../lib/api';
 import { VerdictBadge } from '../components/ui';
 
+const EXAMPLE_QUERIES = [
+  'Подценени tech акции',
+  'Акции с insider buying',
+  'ETF-и с нисък разход',
+  'Компании с ръст над 20%',
+];
+
 export default function ScreenerPage() {
   const location = useLocation();
   const [query, setQuery] = useState(location.state?.query || '');
   const [results, setResults] = useState([]);
+  const [summary, setSummary] = useState('');
+  const [unsupportedCriteria, setUnsupportedCriteria] = useState([]);
   const [searched, setSearched] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -15,9 +24,13 @@ export default function ScreenerPage() {
     setLoading(true);
     setError('');
     setSearched(true);
+    setSummary('');
+    setUnsupportedCriteria([]);
     try {
-      const res = await api.get('/stocks', { params: term ? { search: term } : undefined });
-      setResults(res.data.stocks);
+      const res = await api.post('/stocks/ai-search', { query: term });
+      setResults(res.data.stocks || []);
+      setSummary(res.data.summary || '');
+      setUnsupportedCriteria(res.data.unsupportedCriteria || []);
     } catch (err) {
       setError(err.response?.data?.message || 'Неуспешно търсене.');
     } finally {
@@ -35,19 +48,24 @@ export default function ScreenerPage() {
     runSearch(query.trim());
   };
 
+  const handleExampleClick = (example) => {
+    setQuery(example);
+    runSearch(example);
+  };
+
   return (
     <div className="min-h-[calc(100vh-4rem)] pt-20 px-4 pb-16">
       <div className="max-w-6xl mx-auto">
         <h1 className="text-2xl font-bold text-white mb-2">Screener</h1>
         <p className="text-sm text-slate-500 mb-6">
-          Търси по тикер или име на компания — AI ще прегледа наличните акции вместо теб.
+          Опиши какво търсиш на естествен език — AI ще прегледа наличните акции вместо теб.
         </p>
 
         <form onSubmit={handleSubmit} className="relative mb-8">
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="напр. RKLB, Apple, Palantir..."
+            placeholder="напр. Намери подценени tech компании с дълг под 20%"
             className="w-full bg-slate-800 border border-slate-700 rounded-xl py-4 pl-5 pr-14 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
           <button
@@ -58,7 +76,30 @@ export default function ScreenerPage() {
           </button>
         </form>
 
+        <div className="flex flex-wrap items-center gap-2 mb-8">
+          <span className="text-sm text-slate-500 mr-1">Примери:</span>
+          {EXAMPLE_QUERIES.map((example) => (
+            <button
+              key={example}
+              type="button"
+              onClick={() => handleExampleClick(example)}
+              className="px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-sm text-slate-300 hover:border-blue-500 hover:text-white transition-colors"
+            >
+              {example}
+            </button>
+          ))}
+        </div>
+
         {error && <p className="text-sm text-red-400 mb-4">{error}</p>}
+
+        {searched && !loading && summary && (
+          <div className="mb-4 text-sm text-slate-300 bg-slate-800/40 border border-slate-700 rounded-lg px-4 py-3">
+            <span className="text-blue-400 font-medium">AI:</span> {summary}
+            {unsupportedCriteria.length > 0 && (
+              <p className="text-xs text-slate-500 mt-1">Без данни за: {unsupportedCriteria.join(', ')}</p>
+            )}
+          </div>
+        )}
 
         {!searched ? (
           <div className="flex flex-col items-center text-center text-slate-500 py-20">

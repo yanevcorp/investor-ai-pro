@@ -54,6 +54,12 @@ function formatChange(change, changePercent) {
   return { text: `${Math.abs(c).toFixed(2)} (${Math.abs(cp).toFixed(2)}%)`, isPositive: c >= 0 };
 }
 
+function formatExtendedChange(changePercent) {
+  const cp = toFiniteNumber(changePercent);
+  if (cp === null) return '';
+  return `${cp >= 0 ? '+' : ''}${cp.toFixed(2)}%`;
+}
+
 function AddToPortfolioForm({ onAdd, onCancel }) {
   const [weight, setWeight] = useState('');
   const [value, setValue] = useState('');
@@ -248,6 +254,8 @@ export default function AnalysisPage() {
   const activeTabMetrics = Array.isArray(details[tab]) ? details[tab].filter(Boolean) : [];
   const tabs = getTabsFor(Boolean(stock.isEtf));
   const sessionLabel = MARKET_SESSION_LABELS[marketSession] || null;
+  const isExtendedSession = marketSession === 'pre-market' || marketSession === 'after-hours';
+  const extendedPrice = liveQuote?.extendedPrice ?? stock.extendedPrice ?? null;
 
   const probabilityData = ['1W', '1M', '3M'].map((period) => ({
     period,
@@ -291,9 +299,20 @@ export default function AnalysisPage() {
               >
                 {priceText}
               </div>
-              <div className={`text-sm font-medium ${changeInfo.isPositive ? 'text-green-400' : 'text-red-400'}`}>
-                {changeInfo.isPositive ? '▲' : '▼'} {changeInfo.text}
-              </div>
+              {isExtendedSession && extendedPrice ? (
+                <div className="text-sm font-medium text-amber-400">
+                  {sessionLabel}: {formatPrice(extendedPrice.price)} ({formatExtendedChange(extendedPrice.changePercent)})
+                </div>
+              ) : (
+                <div className={`text-sm font-medium ${changeInfo.isPositive ? 'text-green-400' : 'text-red-400'}`}>
+                  {changeInfo.isPositive ? '▲' : '▼'} {changeInfo.text}
+                </div>
+              )}
+              {isExtendedSession && extendedPrice?.asOf && (
+                <div className="text-[10px] text-amber-500/70 mt-0.5">
+                  Последна сделка извън борсата: {timeAgo(extendedPrice.asOf)}
+                </div>
+              )}
               {lastUpdatedAt && <div className="text-[10px] text-slate-600 mt-0.5">Обновено {timeAgo(lastUpdatedAt)}</div>}
             </div>
             {stock.verdict && <VerdictBadge verdict={stock.verdict} className="text-sm px-4 py-2" />}
