@@ -6,6 +6,7 @@ import AnalysisPage from './pages/AnalysisPage';
 import PortfolioPage from './pages/PortfolioPage';
 import AlertsPage from './pages/AlertsPage';
 import ScreenerPage from './pages/ScreenerPage';
+import BottleneckPage from './pages/BottleneckPage';
 import WatchlistPage from './pages/WatchlistPage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
@@ -34,6 +35,7 @@ function App() {
           <Route path="/portfolio" element={<PortfolioPage />} />
           <Route path="/alerts" element={<AlertsPage />} />
           <Route path="/screener" element={<ScreenerPage />} />
+          <Route path="/bottlenecks" element={<BottleneckPage />} />
           <Route path="/watchlist" element={<WatchlistPage />} />
         </Route>
         <Route path="/login" element={<LoginPage />} />
