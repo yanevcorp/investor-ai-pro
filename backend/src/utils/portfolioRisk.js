@@ -93,16 +93,25 @@ function weightedAiScore(positions) {
   return Math.round(weighted / totalWeight);
 }
 
-function portfolioRiskLevel(positions) {
-  if (positions.length === 0) return 'Low';
+// 0-100 composite risk score from top-sector concentration + average
+// drawdown — the same two inputs portfolioRiskLevel buckets into
+// Low/Medium/High, exposed as a raw number so callers that need a
+// magnitude (e.g. "risk changed by +12") aren't stuck with 3 buckets.
+function portfolioRiskScore(positions) {
+  if (positions.length === 0) return 0;
   const concentration = sectorConcentration(positions);
   const topSectorWeight = concentration[0]?.weightPercent ?? 0;
-  const avgDrawdown =
-    positions.reduce((s, p) => s + (p.drawdownPercent ?? 20), 0) / positions.length;
-  const score =
+  const avgDrawdown = positions.reduce((s, p) => s + (p.drawdownPercent ?? 20), 0) / positions.length;
+  const rawScore =
     (topSectorWeight >= 50 ? 2 : topSectorWeight >= 30 ? 1 : 0) +
     (avgDrawdown >= 30 ? 2 : avgDrawdown >= 15 ? 1 : 0);
-  return score >= 3 ? 'High' : score >= 1 ? 'Medium' : 'Low';
+  return Math.round((rawScore / 4) * 100);
+}
+
+function portfolioRiskLevel(positions) {
+  if (positions.length === 0) return 'Low';
+  const score = portfolioRiskScore(positions);
+  return score >= 75 ? 'High' : score >= 25 ? 'Medium' : 'Low';
 }
 
 module.exports = {
@@ -113,5 +122,6 @@ module.exports = {
   riskLevelFor,
   sectorConcentration,
   weightedAiScore,
+  portfolioRiskScore,
   portfolioRiskLevel,
 };

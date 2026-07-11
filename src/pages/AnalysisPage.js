@@ -298,7 +298,7 @@ export default function AnalysisPage() {
               onClick={() => setShowSimulator(true)}
               className="px-4 py-2 rounded-lg border border-slate-700 text-slate-300 hover:text-white hover:border-slate-600 text-sm font-medium transition-colors"
             >
-              Симулирай добавяне
+              🧪 Симулирай в портфолио
             </button>
           </div>
         </Card>
@@ -416,7 +416,9 @@ export default function AnalysisPage() {
           </Card>
         )}
       </div>
-      {showSimulator && <SimulatorModal symbol={sym} onClose={() => setShowSimulator(false)} />}
+      {showSimulator && (
+        <SimulatorModal symbol={sym} price={toFiniteNumber(stock.price)} onClose={() => setShowSimulator(false)} />
+      )}
     </div>
   );
 }

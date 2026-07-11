@@ -2,11 +2,14 @@ const Portfolio = require('../models/Portfolio');
 const Stock = require('../models/Stock');
 const { provisionStock } = require('./stockController');
 const { getOrFetchHistory } = require('../services/historyService');
+const finnhubService = require('../services/finnhubService');
 const {
   maxDrawdownPercent,
   correlationBetween,
   weightedAiScore,
   portfolioRiskLevel,
+  portfolioRiskScore,
+  sectorConcentration,
 } = require('../utils/portfolioRisk');
 
 // Bounds how many existing holdings get a fresh correlation calculation —
@@ -101,13 +104,24 @@ async function deleteHolding(req, res, next) {
   }
 }
 
+// Combines the AI-score delta with the risk-score delta into a single
+// plain-language verdict: a score gain that doesn't meaningfully add risk
+// is a good addition; a score drop paired with a real risk increase is
+// discouraged; anything mixed gets a "proceed carefully" nudge.
+function recommendationFor(scoreChange, riskChange) {
+  if (scoreChange >= 0 && riskChange <= 5) return 'Добра добавка';
+  if (scoreChange < 0 && riskChange > 10) return 'Не препоръчваме';
+  return 'Внимавай';
+}
+
 async function simulateAddition(req, res, next) {
   try {
-    const { symbol } = req.body;
+    const { symbol, shares } = req.body;
     if (!symbol) {
       return res.status(400).json({ message: 'symbol is required' });
     }
     const candidateSymbol = symbol.toUpperCase();
+    const sharesRequested = shares != null && Number(shares) > 0 ? Number(shares) : null;
 
     const portfolio = await Portfolio.findOne({ user: req.user._id });
     const holdings = portfolio?.holdings || [];
@@ -158,36 +172,79 @@ async function simulateAddition(req, res, next) {
 
     const beforeAiScore = weightedAiScore(positions);
     const beforeRisk = portfolioRiskLevel(positions);
+    const beforeRiskScore = portfolioRiskScore(positions);
 
-    // No specific weight was requested for the candidate — simulate adding
-    // it at an illustrative 10% (100% if this is the very first holding),
-    // scaling existing positions down proportionally so weights still sum
-    // to 100. Clearly labeled to the user as an assumption, not a plan.
     const hasExistingHoldings = positions.length > 0;
-    const candidateWeight = hasExistingHoldings ? 10 : 100;
-    const scaleFactor = hasExistingHoldings ? 0.9 : 1;
+    const currentTotalValue = holdings.reduce((sum, h) => sum + (h.value || 0), 0);
 
+    let candidateWeight;
+    let scaleFactor;
+    if (sharesRequested != null) {
+      // A specific share count was given — price it with a live quote (the
+      // seeded Stock.price can be stale) and derive the resulting weight
+      // from real dollar values instead of an illustrative assumption.
+      let price = candidateStock.price;
+      try {
+        const quote = await finnhubService.getQuote(candidateSymbol);
+        price = quote.price;
+      } catch (err) {
+        // Quote unavailable/rate-limited — fall back to the last known price.
+      }
+      const candidateValue = sharesRequested * price;
+      const newTotalValue = currentTotalValue + candidateValue;
+      candidateWeight = newTotalValue > 0 ? (candidateValue / newTotalValue) * 100 : 100;
+      scaleFactor = newTotalValue > 0 ? currentTotalValue / newTotalValue : 0;
+    } else {
+      // No share count given — simulate adding at an illustrative 10% (100%
+      // if this is the very first holding), scaling existing positions down
+      // proportionally so weights still sum to 100. Clearly labeled to the
+      // user as an assumption, not a plan.
+      candidateWeight = hasExistingHoldings ? 10 : 100;
+      scaleFactor = hasExistingHoldings ? 0.9 : 1;
+    }
+
+    const candidateSector = candidateStock.sector || '';
     const afterPositions = [
       ...positions.map((p) => ({ ...p, weight: p.weight * scaleFactor })),
       {
         symbol: candidateSymbol,
         weight: candidateWeight,
-        sector: candidateStock.sector || '',
+        sector: candidateSector,
         aiScore: candidateStock.aiScore ?? 50,
         drawdownPercent: candidateDrawdown,
       },
     ];
     const afterAiScore = weightedAiScore(afterPositions);
     const afterRisk = portfolioRiskLevel(afterPositions);
+    const afterRiskScore = portfolioRiskScore(afterPositions);
+
+    const sectorKey = candidateSector || 'Друго';
+    const sectorWeightBefore = sectorConcentration(positions).find((s) => s.sector === sectorKey)?.weightPercent ?? 0;
+    const sectorWeightAfter = sectorConcentration(afterPositions).find((s) => s.sector === sectorKey)?.weightPercent ?? 0;
+
+    const scoreChange = beforeAiScore != null && afterAiScore != null ? afterAiScore - beforeAiScore : 0;
+    const riskChange = afterRiskScore - beforeRiskScore;
 
     res.json({
       symbol: candidateSymbol,
-      assumedWeightPercent: candidateWeight,
+      sharesRequested,
+      assumedWeightPercent: Number(candidateWeight.toFixed(1)),
       hasExistingHoldings,
-      before: { aiScore: beforeAiScore, riskLevel: beforeRisk },
-      after: { aiScore: afterAiScore, riskLevel: afterRisk },
+      before: { aiScore: beforeAiScore, riskLevel: beforeRisk, riskScore: beforeRiskScore },
+      after: { aiScore: afterAiScore, riskLevel: afterRisk, riskScore: afterRiskScore },
+      currentScore: beforeAiScore,
+      newScore: afterAiScore,
+      riskChange,
       correlations,
       avgCorrelation,
+      correlation: avgCorrelation,
+      sectorConcentration: {
+        sector: sectorKey,
+        before: sectorWeightBefore,
+        after: Number(sectorWeightAfter.toFixed(1)),
+        change: Number((sectorWeightAfter - sectorWeightBefore).toFixed(1)),
+      },
+      recommendation: recommendationFor(scoreChange, riskChange),
     });
   } catch (err) {
     next(err);
