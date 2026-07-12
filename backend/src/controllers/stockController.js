@@ -9,6 +9,7 @@ const { isEtfSymbol } = require('../utils/etf');
 const { getMarketSession } = require('../utils/marketSession');
 const { getOrFetchHistory, sliceRange, getIntradayHistory } = require('../services/historyService');
 const { getOrFetchFinancialsHistory } = require('../services/financialsHistoryService');
+const { withTimeout } = require('../utils/withTimeout');
 const { sparklineFrom, maxDrawdownPercent } = require('../utils/portfolioRisk');
 const { avNumber } = require('../utils/numbers');
 const { buildValuationScores } = require('../utils/buildValuationScores');
@@ -160,7 +161,11 @@ const ANALYST_RATINGS_TTL_MS = 24 * 60 * 60 * 1000;
 // FMP over Finnhub here: Finnhub's free tier only has the buy/hold/sell
 // breakdown (/stock/price-target is 403), while FMP's free tier has both
 // that (grades-consensus) and price targets (price-target-consensus) —
-// a strict superset, not a swap of one gap for another.
+// a strict superset, not a swap of one gap for another. But FMP's free
+// tier is also the flakiest/slowest provider this app talks to, so if its
+// grades-consensus call fails, Finnhub's recommendation trends (same
+// buy/hold/sell shape, no price target) fills in rather than losing the
+// analyst-ratings section entirely.
 async function getOrFetchAnalystRatings(stock) {
   const isFresh =
     stock.analystRatings &&
@@ -171,7 +176,7 @@ async function getOrFetchAnalystRatings(stock) {
   try {
     const [priceTarget, grades] = await Promise.all([
       fmpService.getPriceTargetConsensus(stock.symbol).catch(() => null),
-      fmpService.getGradesConsensus(stock.symbol),
+      fmpService.getGradesConsensus(stock.symbol).catch(() => finnhubService.getRecommendationTrends(stock.symbol)),
     ]);
     const ratings = { ...grades, priceTarget };
     stock.analystRatings = ratings;
@@ -179,7 +184,8 @@ async function getOrFetchAnalystRatings(stock) {
     await stock.save();
     return ratings;
   } catch (err) {
-    // Rate-limited/unavailable — fall back to whatever's cached, even if stale.
+    // Both FMP and the Finnhub fallback failed — fall back to whatever's
+    // cached, even if stale.
     return stock.analystRatings || null;
   }
 }
@@ -321,29 +327,64 @@ async function getStock(req, res, next) {
     const isEtf = isEtfSymbol(symbol);
     obj.isEtf = isEtf;
     obj.marketSession = getMarketSession();
+    obj.analysis = obj.analysis || {};
 
-    try {
-      const quote = await finnhubService.getQuote(symbol);
+    // These are independent lookups against different providers — kicked
+    // off together and awaited via Promise.all (instead of one long chain
+    // of sequential awaits) so a slow/flaky provider, FMP's free tier in
+    // particular, can't stack its latency on top of every other call and
+    // push the whole request past the hosting platform's function timeout.
+    // Each one already degrades to null/[] on its own failure, so the page
+    // still renders with whatever data made it back in time.
+    const quotePromise = finnhubService.getQuote(symbol).catch(() => null);
+    const profilePromise = finnhubService.getProfile(symbol).catch(() => null);
+    const fundamentalsPromise = getFundamentals(stock, isEtf).catch(() => null);
+    const analystRatingsPromise = getOrFetchAnalystRatings(stock).catch(() => null);
+    // ETFs don't file income statements/balance sheets — this section is
+    // equity-only (see financialsHistoryService). This chain (price
+    // history, then 4 deliberately-throttled sequential Alpha Vantage
+    // calls, then FMP ratios/key-metrics/sector-PE) is by far the slowest
+    // path in this request, so it's capped at 20s — past that, the rest of
+    // the page still renders and this section just falls back to
+    // whatever's cached.
+    const financialsHistoryPromise = isEtf
+      ? Promise.resolve(null)
+      : withTimeout(
+          getOrFetchHistory(stock)
+            .then((priceHistory) => getOrFetchFinancialsHistory(stock, priceHistory))
+            .catch(() => null),
+          20000,
+          stock.financialsHistory || null
+        );
+    // News needs the (possibly updated) company name, so it only waits on
+    // the profile lookup rather than on fundamentals/history/ratings too.
+    const newsPromise = profilePromise
+      .then((profile) => newsService.getCompanyNews(profile?.name || obj.name || symbol, symbol))
+      .catch(() => []);
+
+    const [quote, profile, fundamentals, analystRatings, financialsHistory, news] = await Promise.all([
+      quotePromise,
+      profilePromise,
+      fundamentalsPromise,
+      analystRatingsPromise,
+      financialsHistoryPromise,
+      newsPromise,
+    ]);
+
+    if (quote) {
       obj.price = quote.price;
       obj.change = quote.change;
       obj.changePercent = quote.changePercent;
       obj.previousClose = quote.previousClose;
       obj.extendedPrice = buildExtendedPrice(quote, obj.marketSession);
-    } catch (err) {
-      // keep seeded/provisioned fallback
     }
 
-    try {
-      const profile = await finnhubService.getProfile(symbol);
+    if (profile) {
       obj.name = profile.name || obj.name;
       obj.sector = profile.sector || obj.sector;
-    } catch (err) {
-      // keep seeded/provisioned fallback
     }
 
-    const fundamentals = await getFundamentals(stock, isEtf);
     if (fundamentals) {
-      obj.analysis = obj.analysis || {};
       if (isEtf) {
         obj.analysis.overview = buildEtfOverview(fundamentals);
         obj.analysis.financials = buildEtfHoldings(fundamentals);
@@ -353,32 +394,18 @@ async function getStock(req, res, next) {
       }
     }
 
+    obj.analysis.news = news;
+    obj.financialsHistory = financialsHistory;
+    obj.analystRatings = analystRatings;
+
+    // Guarded like every other enrichment step above — an unexpected
+    // fundamentals/financialsHistory shape for one symbol shouldn't take
+    // down a request that otherwise successfully gathered everything else.
     try {
-      obj.analysis = obj.analysis || {};
-      obj.analysis.news = await newsService.getCompanyNews(obj.name || symbol, symbol);
+      obj.valuationScores = buildValuationScores(obj, fundamentals);
     } catch (err) {
-      obj.analysis = obj.analysis || {};
-      obj.analysis.news = [];
+      obj.valuationScores = null;
     }
-
-    // ETFs don't file income statements/balance sheets — this section is
-    // equity-only (see financialsHistoryService).
-    if (!isEtf) {
-      try {
-        const priceHistory = await getOrFetchHistory(stock);
-        obj.financialsHistory = await getOrFetchFinancialsHistory(stock, priceHistory);
-      } catch (err) {
-        obj.financialsHistory = null;
-      }
-    }
-
-    try {
-      obj.analystRatings = await getOrFetchAnalystRatings(stock);
-    } catch (err) {
-      obj.analystRatings = null;
-    }
-
-    obj.valuationScores = buildValuationScores(obj, fundamentals);
 
     res.json({ stock: obj });
   } catch (err) {

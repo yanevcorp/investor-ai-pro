@@ -1,5 +1,6 @@
 const axios = require('axios');
 const cache = require('./cache');
+const { withRetry } = require('../utils/withRetry');
 
 // FMP retired their /api/v3/ endpoints on 2025-08-31 ("Legacy Endpoint" —
 // confirmed live against this key) in favor of /stable/. The free tier
@@ -12,6 +13,11 @@ const CONSENSUS_TTL_MS = 24 * 60 * 60 * 1000;
 const INTRADAY_TTL_MS = 60 * 1000;
 const SECTOR_PE_TTL_MS = 24 * 60 * 60 * 1000;
 const STATEMENT_LIMIT = 5;
+// Kept well under the caller's overall budget (the whole /stocks/:symbol
+// request needs to fit inside the hosting platform's function timeout) —
+// FMP's free tier is otherwise prone to hanging rather than failing fast,
+// which previously let one slow call stall the entire page.
+const REQUEST_TIMEOUT_MS = 5000;
 
 function apiKey() {
   return process.env.FMP_API_KEY;
@@ -24,10 +30,12 @@ async function getIntradayChart(symbol) {
   const cached = cache.get(cacheKey);
   if (cached) return cached;
 
-  const { data } = await axios.get(`${BASE_URL}/historical-chart/1min`, {
-    params: { symbol, apikey: apiKey() },
-    timeout: 8000,
-  });
+  const { data } = await withRetry(() =>
+    axios.get(`${BASE_URL}/historical-chart/1min`, {
+      params: { symbol, apikey: apiKey() },
+      timeout: REQUEST_TIMEOUT_MS,
+    })
+  );
 
   if (!Array.isArray(data) || data.length === 0) {
     throw new Error(`No FMP intraday data for ${symbol}`);
@@ -51,10 +59,12 @@ async function getRatiosHistory(symbol) {
   const cached = cache.get(cacheKey);
   if (cached) return cached;
 
-  const { data } = await axios.get(`${BASE_URL}/ratios`, {
-    params: { symbol, limit: STATEMENT_LIMIT, apikey: apiKey() },
-    timeout: 8000,
-  });
+  const { data } = await withRetry(() =>
+    axios.get(`${BASE_URL}/ratios`, {
+      params: { symbol, limit: STATEMENT_LIMIT, apikey: apiKey() },
+      timeout: REQUEST_TIMEOUT_MS,
+    })
+  );
 
   if (!Array.isArray(data) || data.length === 0) {
     throw new Error(`No FMP ratios for ${symbol}`);
@@ -69,10 +79,12 @@ async function getKeyMetricsHistory(symbol) {
   const cached = cache.get(cacheKey);
   if (cached) return cached;
 
-  const { data } = await axios.get(`${BASE_URL}/key-metrics`, {
-    params: { symbol, limit: STATEMENT_LIMIT, apikey: apiKey() },
-    timeout: 8000,
-  });
+  const { data } = await withRetry(() =>
+    axios.get(`${BASE_URL}/key-metrics`, {
+      params: { symbol, limit: STATEMENT_LIMIT, apikey: apiKey() },
+      timeout: REQUEST_TIMEOUT_MS,
+    })
+  );
 
   if (!Array.isArray(data) || data.length === 0) {
     throw new Error(`No FMP key metrics for ${symbol}`);
@@ -96,13 +108,18 @@ async function getSectorPE(sector, date) {
   const cached = cache.get(cacheKey);
   if (cached) return cached;
 
+  // Capped at 4 attempts (not a full week) with a short per-request
+  // timeout — this walks backward day-by-day, so an unbounded/8s-timeout
+  // version could burn up to ~56s on a bad day, which alone was enough to
+  // blow the whole /stocks/:symbol request past the hosting platform's
+  // function timeout.
   let cursor = new Date(`${date}T00:00:00Z`);
-  for (let attempt = 0; attempt < 7; attempt += 1) {
+  for (let attempt = 0; attempt < 4; attempt += 1) {
     const dateStr = cursor.toISOString().slice(0, 10);
     try {
       const { data } = await axios.get(`${BASE_URL}/sector-pe-snapshot`, {
         params: { date: dateStr, sector, exchange: 'NASDAQ', apikey: apiKey() },
-        timeout: 8000,
+        timeout: 4000,
       });
       if (Array.isArray(data) && data.length > 0 && typeof data[0].pe === 'number') {
         cache.set(cacheKey, data[0].pe, SECTOR_PE_TTL_MS);
@@ -122,10 +139,12 @@ async function getPriceTargetConsensus(symbol) {
   const cached = cache.get(cacheKey);
   if (cached) return cached;
 
-  const { data } = await axios.get(`${BASE_URL}/price-target-consensus`, {
-    params: { symbol, apikey: apiKey() },
-    timeout: 8000,
-  });
+  const { data } = await withRetry(() =>
+    axios.get(`${BASE_URL}/price-target-consensus`, {
+      params: { symbol, apikey: apiKey() },
+      timeout: REQUEST_TIMEOUT_MS,
+    })
+  );
 
   if (!Array.isArray(data) || data.length === 0) {
     throw new Error(`No FMP price target consensus for ${symbol}`);
@@ -147,10 +166,12 @@ async function getGradesConsensus(symbol) {
   const cached = cache.get(cacheKey);
   if (cached) return cached;
 
-  const { data } = await axios.get(`${BASE_URL}/grades-consensus`, {
-    params: { symbol, apikey: apiKey() },
-    timeout: 8000,
-  });
+  const { data } = await withRetry(() =>
+    axios.get(`${BASE_URL}/grades-consensus`, {
+      params: { symbol, apikey: apiKey() },
+      timeout: REQUEST_TIMEOUT_MS,
+    })
+  );
 
   if (!Array.isArray(data) || data.length === 0) {
     throw new Error(`No FMP grades consensus for ${symbol}`);

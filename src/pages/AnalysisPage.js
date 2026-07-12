@@ -15,6 +15,20 @@ import useLiveQuotes from '../hooks/useLiveQuotes';
 import useFlashOnChange from '../hooks/useFlashOnChange';
 
 const LIVE_QUOTE_INTERVAL_MS = 30000;
+const LOAD_RETRY_DELAYS_MS = [600, 1200];
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// A missing response (network error, timeout) or a 5xx is worth retrying —
+// it's usually a transient backend/upstream-provider hiccup. A 4xx (other
+// than the already-separate 404 case) means the request itself is wrong,
+// so retrying it would just fail the same way again.
+function isRetryableLoadError(err) {
+  const status = err.response?.status;
+  return !status || status >= 500;
+}
 
 const TABS = [
   { key: 'overview', label: 'Overview' },
@@ -155,29 +169,42 @@ export default function AnalysisPage() {
     setError(false);
     setStock(null);
 
-    api
-      .get(`/stocks/${sym}`)
-      .then((res) => {
-        if (cancelled) return;
-        const data = res.data?.stock;
-        if (data && typeof data === 'object') {
-          setStock(data);
-          setStockLoadedAt(new Date().toISOString());
-        } else {
+    (async () => {
+      for (let attempt = 0; ; attempt += 1) {
+        try {
+          const res = await api.get(`/stocks/${sym}`);
+          if (cancelled) return;
+          const data = res.data?.stock;
+          if (data && typeof data === 'object') {
+            setStock(data);
+            setStockLoadedAt(new Date().toISOString());
+          } else {
+            setError(true);
+          }
+          return;
+        } catch (err) {
+          if (cancelled) return;
+          if (err.response?.status === 404) {
+            setNotFound(true);
+            return;
+          }
+          // Transient failures (timeout, network error, 5xx) get a couple
+          // of quick automatic retries before falling back to the manual
+          // "Опитай отново" screen — most of these clear up on their own
+          // within a few seconds (a slow upstream provider, a cold-started
+          // backend function, etc.).
+          if (isRetryableLoadError(err) && attempt < LOAD_RETRY_DELAYS_MS.length) {
+            await sleep(LOAD_RETRY_DELAYS_MS[attempt]);
+            if (cancelled) return;
+            continue;
+          }
           setError(true);
+          return;
         }
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        if (err.response?.status === 404) {
-          setNotFound(true);
-        } else {
-          setError(true);
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+      }
+    })().finally(() => {
+      if (!cancelled) setLoading(false);
+    });
 
     return () => {
       cancelled = true;

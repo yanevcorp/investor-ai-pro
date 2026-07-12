@@ -65,6 +65,40 @@ async function getProfile(symbol) {
   return profile;
 }
 
+// Fallback for FMP's grades-consensus (buy/hold/sell breakdown) when FMP
+// is down/rate-limited/timing out — Finnhub's free tier has this endpoint
+// (unlike /stock/price-target, which is 403 on free tier, so there's no
+// equivalent fallback for the price-target side).
+async function getRecommendationTrends(symbol) {
+  const cacheKey = `finnhub:recommendation:${symbol}`;
+  const cached = cache.get(cacheKey);
+  if (cached) return cached;
+
+  const { data } = await axios.get(`${BASE_URL}/stock/recommendation`, {
+    params: { symbol, token: process.env.FINNHUB_API_KEY },
+    timeout: 5000,
+  });
+
+  if (!Array.isArray(data) || data.length === 0) {
+    throw new Error(`No Finnhub recommendation trends for ${symbol}`);
+  }
+
+  // Most recent period is first.
+  const r = data[0];
+  const result = {
+    strongBuy: r.strongBuy || 0,
+    buy: r.buy || 0,
+    hold: r.hold || 0,
+    sell: r.sell || 0,
+    strongSell: r.strongSell || 0,
+    consensus: null,
+  };
+  result.totalAnalysts = result.strongBuy + result.buy + result.hold + result.sell + result.strongSell;
+
+  cache.set(cacheKey, result, PROFILE_TTL_MS);
+  return result;
+}
+
 async function searchSymbols(query) {
   const cacheKey = `finnhub:search:${query.toLowerCase()}`;
   const cached = cache.get(cacheKey);
@@ -80,4 +114,4 @@ async function searchSymbols(query) {
   return results;
 }
 
-module.exports = { getQuote, getProfile, searchSymbols };
+module.exports = { getQuote, getProfile, searchSymbols, getRecommendationTrends };

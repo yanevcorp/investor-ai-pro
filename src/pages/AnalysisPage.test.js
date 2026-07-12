@@ -195,12 +195,30 @@ test('shows not-found state on a 404 response', async () => {
 });
 
 test('shows a retryable error state on network/server failure', async () => {
-  api.get.mockRejectedValueOnce(new Error('Network Error'));
+  // The initial attempt plus both automatic retries all fail, so this
+  // exercises the full retry sequence before the error screen shows.
+  api.get
+    .mockRejectedValueOnce(new Error('Network Error'))
+    .mockRejectedValueOnce(new Error('Network Error'))
+    .mockRejectedValueOnce(new Error('Network Error'));
 
   renderAnalysisPage('DOWN');
 
-  expect(await screen.findByText(/Неуспешно зареждане на/)).toBeInTheDocument();
+  expect(await screen.findByText(/Неуспешно зареждане на/, {}, { timeout: 5000 })).toBeInTheDocument();
   expect(screen.getByText('Опитай отново')).toBeInTheDocument();
+});
+
+test('recovers after a transient failure without showing the error screen', async () => {
+  api.get
+    .mockRejectedValueOnce(new Error('Network Error'))
+    .mockResolvedValueOnce({
+      data: { stock: { symbol: 'FLAKY', name: 'Flaky Corp', price: 10, analysis: {} } },
+    });
+
+  renderAnalysisPage('FLAKY');
+
+  expect(await screen.findByText('FLAKY', {}, { timeout: 5000 })).toBeInTheDocument();
+  expect(screen.queryByText(/Неуспешно зареждане на/)).not.toBeInTheDocument();
 });
 
 test('shows an error state when the response has no stock payload', async () => {
