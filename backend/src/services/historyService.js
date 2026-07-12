@@ -1,5 +1,6 @@
 const yahooFinanceService = require('./yahooFinanceService');
 const alphaVantageService = require('./alphaVantageService');
+const fmpService = require('./fmpService');
 
 const HISTORY_FRESHNESS_MS = 24 * 60 * 60 * 1000;
 
@@ -44,11 +45,23 @@ async function getOrFetchHistory(stockDoc) {
 
 const RANGE_DAYS = {
   '1M': 30,
+  '6M': 182,
   '1Y': 365,
   '3Y': 365 * 3,
   '5Y': 365 * 5,
+  '10Y': 365 * 10 + 3,
   '20Y': 365 * 20 + 5, // +5 comfortably covers the full cached dataset despite leap years
 };
+
+// 1D has no daily-close representation — it's handled as a special case by
+// the caller (see getIntradayHistory), never through sliceRange.
+async function getIntradayHistory(symbol) {
+  try {
+    return await fmpService.getIntradayChart(symbol);
+  } catch (err) {
+    return [];
+  }
+}
 
 // Existing callers (RiskGrid drawdown, the Watchlist/Portfolio expanded
 // chart, alert detail sparklines) expect "the available period" to mean a
@@ -70,4 +83,4 @@ function sliceRange(history, range) {
   return history.filter((point) => point.date >= cutoffStr);
 }
 
-module.exports = { getOrFetchHistory, sliceRange };
+module.exports = { getOrFetchHistory, sliceRange, getIntradayHistory };

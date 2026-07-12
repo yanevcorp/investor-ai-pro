@@ -3,10 +3,11 @@ const finnhubService = require('../services/finnhubService');
 const alphaVantageService = require('../services/alphaVantageService');
 const newsService = require('../services/newsService');
 const groqService = require('../services/groqService');
+const fmpService = require('../services/fmpService');
 const { buildGenericAnalysis } = require('../utils/buildAnalysis');
 const { isEtfSymbol } = require('../utils/etf');
 const { getMarketSession } = require('../utils/marketSession');
-const { getOrFetchHistory, sliceRange } = require('../services/historyService');
+const { getOrFetchHistory, sliceRange, getIntradayHistory } = require('../services/historyService');
 const { getOrFetchFinancialsHistory } = require('../services/financialsHistoryService');
 const { sparklineFrom, maxDrawdownPercent } = require('../utils/portfolioRisk');
 const { avNumber } = require('../utils/numbers');
@@ -156,6 +157,10 @@ async function getFundamentals(stock, isEtf) {
 
 const ANALYST_RATINGS_TTL_MS = 24 * 60 * 60 * 1000;
 
+// FMP over Finnhub here: Finnhub's free tier only has the buy/hold/sell
+// breakdown (/stock/price-target is 403), while FMP's free tier has both
+// that (grades-consensus) and price targets (price-target-consensus) —
+// a strict superset, not a swap of one gap for another.
 async function getOrFetchAnalystRatings(stock) {
   const isFresh =
     stock.analystRatings &&
@@ -164,11 +169,15 @@ async function getOrFetchAnalystRatings(stock) {
   if (isFresh) return stock.analystRatings;
 
   try {
-    const trends = await finnhubService.getRecommendationTrends(stock.symbol);
-    stock.analystRatings = trends;
+    const [priceTarget, grades] = await Promise.all([
+      fmpService.getPriceTargetConsensus(stock.symbol).catch(() => null),
+      fmpService.getGradesConsensus(stock.symbol),
+    ]);
+    const ratings = { ...grades, priceTarget };
+    stock.analystRatings = ratings;
     stock.analystRatingsFetchedAt = new Date();
     await stock.save();
-    return trends;
+    return ratings;
   } catch (err) {
     // Rate-limited/unavailable — fall back to whatever's cached, even if stale.
     return stock.analystRatings || null;
@@ -523,13 +532,25 @@ async function getStockHistory(req, res, next) {
       }
     }
 
-    const fullHistory = await getOrFetchHistory(stock);
     // range is optional — omitted for existing callers (RiskGrid, the
     // Watchlist/Portfolio expanded chart, alerts), which expect "the
     // available period" to mean a recent window (see historyService's
     // sliceRange default). AnalysisPage's timeframe buttons pass one of
-    // 1M/YTD/1Y/3Y/5Y/20Y explicitly.
+    // 1D/1M/6M/YTD/1Y/3Y/5Y/10Y/20Y explicitly.
     const range = typeof req.query.range === 'string' ? req.query.range.toUpperCase() : undefined;
+
+    if (range === '1D') {
+      const intraday = await getIntradayHistory(symbol);
+      return res.json({
+        symbol,
+        range: '1D',
+        sparkline: sparklineFrom(intraday, 7),
+        history: intraday,
+        drawdownPercent: maxDrawdownPercent(intraday),
+      });
+    }
+
+    const fullHistory = await getOrFetchHistory(stock);
     const rangedHistory = sliceRange(fullHistory, range);
     res.json({
       symbol,

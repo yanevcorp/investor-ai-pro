@@ -12,13 +12,15 @@ const CATEGORIES = [
 
 function scoreColor(score) {
   if (score === null || score === undefined) return 'text-slate-500 border-slate-700';
-  if (score >= 70) return 'text-green-400 border-green-500/30';
-  if (score >= 40) return 'text-yellow-400 border-yellow-500/30';
+  if (score >= 4) return 'text-green-400 border-green-500/30';
+  if (score === 3) return 'text-yellow-400 border-yellow-500/30';
   return 'text-red-400 border-red-500/30';
 }
 
-// valuationScores: { [category]: { score: 0-100|null, detail: [{label, value, positive}] } }
-// Heuristic scores derived from data already fetched for this stock — see
+// valuationScores: { [category]: { score: 1-5|null, label: string|null,
+// detail: [{label, value, positive}] } } — heuristic scores derived from
+// data already fetched for this stock, on a 1-5 scale (Слабо..Много добро)
+// in the spirit of Simply Wall St's score cards. See
 // backend/src/utils/buildValuationScores.js for the exact formulas. A null
 // score means the underlying data isn't available (e.g. ETFs have no
 // income statement, so growth/profitability/financialHealth show N/A).
@@ -30,7 +32,7 @@ export default function ValuationScores({ valuationScores }) {
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
       {CATEGORIES.map(({ key, label }) => {
-        const entry = valuationScores[key] || { score: null, detail: [] };
+        const entry = valuationScores[key] || { score: null, label: null, detail: [] };
         const isExpanded = expandedKey === key;
 
         return (
@@ -46,6 +48,7 @@ export default function ValuationScores({ valuationScores }) {
                   {entry.score ?? 'N/A'}
                 </span>
               </div>
+              {entry.label && <div className={`text-xs mt-1.5 ${scoreColor(entry.score).split(' ')[0]}`}>{entry.label}</div>}
             </button>
 
             {isExpanded && (

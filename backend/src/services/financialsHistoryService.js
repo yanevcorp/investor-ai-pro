@@ -1,5 +1,7 @@
 const alphaVantageService = require('./alphaVantageService');
+const fmpService = require('./fmpService');
 const { avNumber } = require('../utils/numbers');
+const { mapToFmpSector } = require('../utils/sectorMapping');
 
 // Finds the most recent price at or before a fiscal date-ending, from an
 // oldest-first {date, close} array — used to compute historical P/E
@@ -90,6 +92,33 @@ function buildFinancialsHistory({ income, balance, cashflow, earnings, priceHist
   return { revenueHistory, marginsHistory, debtVsCashHistory, epsHistory, peHistory };
 }
 
+// FMP's free tier caps ratios/key-metrics history at 5 records regardless
+// of the `limit` requested (confirmed live — not a bug here), so
+// ratioHistory only ever covers 5 years, shorter than the AV-sourced
+// series above. Merged by fiscalYear since ratios and key-metrics are two
+// separate FMP endpoints.
+function buildRatioHistoryFromFmp(ratios, keyMetrics) {
+  const byYear = new Map();
+
+  (ratios || []).forEach((r) => {
+    byYear.set(r.fiscalYear, {
+      year: r.fiscalYear,
+      date: r.date,
+      pe: typeof r.priceToEarningsRatio === 'number' ? Number(r.priceToEarningsRatio.toFixed(2)) : null,
+      ps: typeof r.priceToSalesRatio === 'number' ? Number(r.priceToSalesRatio.toFixed(2)) : null,
+      pb: typeof r.priceToBookRatio === 'number' ? Number(r.priceToBookRatio.toFixed(2)) : null,
+    });
+  });
+
+  (keyMetrics || []).forEach((k) => {
+    const existing = byYear.get(k.fiscalYear) || { year: k.fiscalYear, date: k.date, pe: null, ps: null, pb: null };
+    existing.evToEbitda = typeof k.evToEBITDA === 'number' ? Number(k.evToEBITDA.toFixed(2)) : null;
+    byYear.set(k.fiscalYear, existing);
+  });
+
+  return Array.from(byYear.values()).sort((a, b) => a.year.localeCompare(b.year));
+}
+
 // ETFs don't file income statements/balance sheets the way equities do —
 // Alpha Vantage's ETF_PROFILE (already used for ETF fundamentals) is a
 // different, non-historical shape, so this section is equity-only.
@@ -109,10 +138,32 @@ async function getOrFetchFinancialsHistory(stockDoc, priceHistory) {
   const earnings = await alphaVantageService.getEarnings(stockDoc.symbol);
 
   const financialsHistory = buildFinancialsHistory({ income, balance, cashflow, earnings, priceHistory });
+
+  // FMP additions are best-effort — a failure here shouldn't take down the
+  // AV-sourced sections above, which is most of the page.
+  try {
+    const [ratios, keyMetrics] = await Promise.all([
+      fmpService.getRatiosHistory(stockDoc.symbol),
+      fmpService.getKeyMetricsHistory(stockDoc.symbol),
+    ]);
+    financialsHistory.ratioHistory = buildRatioHistoryFromFmp(ratios, keyMetrics);
+  } catch (err) {
+    financialsHistory.ratioHistory = [];
+  }
+
+  try {
+    const fmpSector = mapToFmpSector(stockDoc.sector);
+    financialsHistory.sectorAveragePE = fmpSector
+      ? await fmpService.getSectorPE(fmpSector, new Date().toISOString().slice(0, 10))
+      : null;
+  } catch (err) {
+    financialsHistory.sectorAveragePE = null;
+  }
+
   stockDoc.financialsHistory = financialsHistory;
   stockDoc.financialsHistoryFetchedAt = new Date();
   await stockDoc.save();
   return financialsHistory;
 }
 
-module.exports = { getOrFetchFinancialsHistory, buildFinancialsHistory };
+module.exports = { getOrFetchFinancialsHistory, buildFinancialsHistory, buildRatioHistoryFromFmp };

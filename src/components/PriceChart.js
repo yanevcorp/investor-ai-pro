@@ -3,12 +3,18 @@ import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import api from '../lib/api';
 import ErrorBoundary from './ErrorBoundary';
 
-const RANGES = ['1M', 'YTD', '1Y', '3Y', '5Y', '20Y'];
+const RANGES = ['1D', '1M', '6M', 'YTD', '1Y', '3Y', '5Y', '10Y', '20Y'];
 
 function formatDateForRange(dateStr, range) {
-  const d = new Date(dateStr);
+  // 1D points are "YYYY-MM-DD HH:MM:SS" (space-separated, not ISO) —
+  // normalize to a "T" separator first since space-separated datetimes
+  // parse inconsistently across JS engines.
+  const d = new Date(range === '1D' ? dateStr.replace(' ', 'T') : dateStr);
   if (Number.isNaN(d.getTime())) return dateStr;
-  if (range === '1M' || range === 'YTD') {
+  if (range === '1D') {
+    return d.toLocaleTimeString('bg-BG', { hour: '2-digit', minute: '2-digit' });
+  }
+  if (range === '1M' || range === '6M' || range === 'YTD') {
     return d.toLocaleDateString('bg-BG', { day: 'numeric', month: 'short' });
   }
   return d.toLocaleDateString('bg-BG', { month: 'short', year: '2-digit' });

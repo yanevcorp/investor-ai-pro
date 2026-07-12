@@ -401,7 +401,7 @@ export default function AnalysisPage() {
 
         {/* Analyst ratings */}
         <div className="mb-6">
-          <AnalystRatings analystRatings={stock.analystRatings} />
+          <AnalystRatings analystRatings={stock.analystRatings} currentPrice={currentPrice} />
         </div>
 
         {/* Probability chart */}

@@ -9,6 +9,7 @@ import {
   Tooltip,
   Legend,
   ResponsiveContainer,
+  ReferenceLine,
 } from 'recharts';
 import { Card } from './ui';
 import ErrorBoundary from './ErrorBoundary';
@@ -44,15 +45,26 @@ function formatBillions(value) {
   return `$${n}`;
 }
 
-// financialsHistory: { revenueHistory, marginsHistory, debtVsCashHistory, epsHistory, peHistory }
-// — see backend/src/services/financialsHistoryService.js for the exact shape.
+// financialsHistory: { revenueHistory, marginsHistory, debtVsCashHistory,
+// epsHistory, peHistory (all ~10-20yr, Alpha Vantage), ratioHistory (P/E,
+// P/S, P/B, EV/EBITDA — 5yr cap, FMP free tier), sectorAveragePE (FMP,
+// current snapshot only, best-effort sector match) } — see
+// backend/src/services/financialsHistoryService.js for the exact shape.
 // null for ETFs (no income statement / balance sheet data source).
 export default function FundamentalsCharts({ financialsHistory }) {
   if (!financialsHistory) {
     return <p className="text-sm text-slate-500">Няма данни за фундаментален анализ.</p>;
   }
 
-  const { revenueHistory = [], marginsHistory = [], debtVsCashHistory = [], epsHistory = [], peHistory = [] } = financialsHistory;
+  const {
+    revenueHistory = [],
+    marginsHistory = [],
+    debtVsCashHistory = [],
+    epsHistory = [],
+    peHistory = [],
+    ratioHistory = [],
+    sectorAveragePE = null,
+  } = financialsHistory;
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -102,16 +114,46 @@ export default function FundamentalsCharts({ financialsHistory }) {
       </ChartCard>
 
       <div className="md:col-span-2">
-        <ChartCard title="P/E съотношение (историческо)" empty={peHistory.length === 0}>
+        <ChartCard title="P/E съотношение спрямо сектора" empty={peHistory.length === 0}>
           <LineChart data={peHistory}>
             <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
             <XAxis dataKey="year" {...AXIS_PROPS} />
             <YAxis {...AXIS_PROPS} width={44} />
             <Tooltip {...TOOLTIP_STYLE} formatter={(v) => [v, 'P/E']} />
+            {typeof sectorAveragePE === 'number' && (
+              <ReferenceLine
+                y={sectorAveragePE}
+                stroke="#f59e0b"
+                strokeDasharray="4 4"
+                label={{ value: `Сектор: ${sectorAveragePE.toFixed(1)}`, fill: '#f59e0b', fontSize: 11, position: 'insideTopRight' }}
+              />
+            )}
             <Line type="monotone" dataKey="pe" stroke="#06b6d4" strokeWidth={2} dot={{ r: 2 }} />
           </LineChart>
         </ChartCard>
       </div>
+
+      <ChartCard title="P/S и P/B съотношения" empty={ratioHistory.length === 0}>
+        <LineChart data={ratioHistory}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
+          <XAxis dataKey="year" {...AXIS_PROPS} />
+          <YAxis {...AXIS_PROPS} width={44} />
+          <Tooltip {...TOOLTIP_STYLE} />
+          <Legend wrapperStyle={{ fontSize: 11, color: '#94a3b8' }} />
+          <Line type="monotone" dataKey="ps" name="P/S" stroke="#a855f7" strokeWidth={2} dot={{ r: 2 }} />
+          <Line type="monotone" dataKey="pb" name="P/B" stroke="#ec4899" strokeWidth={2} dot={{ r: 2 }} />
+        </LineChart>
+      </ChartCard>
+
+      <ChartCard title="EV/EBITDA" empty={ratioHistory.length === 0}>
+        <LineChart data={ratioHistory}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
+          <XAxis dataKey="year" {...AXIS_PROPS} />
+          <YAxis {...AXIS_PROPS} width={44} />
+          <Tooltip {...TOOLTIP_STYLE} formatter={(v) => [v, 'EV/EBITDA']} />
+          <Line type="monotone" dataKey="evToEbitda" stroke="#14b8a6" strokeWidth={2} dot={{ r: 2 }} />
+        </LineChart>
+      </ChartCard>
     </div>
   );
 }

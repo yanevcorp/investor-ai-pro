@@ -45,9 +45,9 @@ const stockSchema = new mongoose.Schema(
     // of those requests per symbol instead of 1.
     financialsHistory: { type: mongoose.Schema.Types.Mixed, default: null },
     financialsHistoryFetchedAt: { type: Date, default: null },
-    // Finnhub analyst recommendation trends (Strong Buy/Buy/Hold/Sell/
-    // Strong Sell counts for the latest period). Short TTL, not permanent
-    // — analyst sentiment changes and Finnhub's free tier isn't as
+    // FMP grade consensus (Strong Buy/Buy/Hold/Sell/Strong Sell counts) +
+    // price target consensus (high/low/median/average). Short TTL, not
+    // permanent — analyst sentiment changes and FMP's free tier isn't as
     // quota-constrained as Alpha Vantage's.
     analystRatings: { type: mongoose.Schema.Types.Mixed, default: null },
     analystRatingsFetchedAt: { type: Date, default: null },
