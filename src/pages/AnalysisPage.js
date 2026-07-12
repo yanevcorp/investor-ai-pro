@@ -11,6 +11,9 @@ import PriceChart from '../components/PriceChart';
 import FundamentalsCharts from '../components/FundamentalsCharts';
 import AnalystRatings from '../components/AnalystRatings';
 import ValuationScores from '../components/ValuationScores';
+import EarningsCalendar from '../components/EarningsCalendar';
+import InsiderActivity from '../components/InsiderActivity';
+import { Skeleton, SkeletonCard } from '../components/Skeleton';
 import useLiveQuotes from '../hooks/useLiveQuotes';
 import useFlashOnChange from '../hooks/useFlashOnChange';
 
@@ -36,7 +39,7 @@ const TABS = [
   { key: 'technicals', label: 'Technicals' },
   { key: 'sentiment', label: 'Sentiment' },
   { key: 'macro', label: 'Macro' },
-  { key: 'insider', label: 'Insider' },
+  { key: 'insider', label: 'Инсайдър активност' },
   { key: 'predictions', label: 'Predictions' },
 ];
 
@@ -237,8 +240,22 @@ export default function AnalysisPage() {
 
   if (loading) {
     return (
-      <div className="min-h-[calc(100vh-4rem)] pt-24 px-4 flex flex-col items-center text-center text-slate-500">
-        Зареждане на анализ за {sym}...
+      <div className="min-h-[calc(100vh-4rem)] pt-20 px-4 pb-16">
+        <div className="max-w-6xl mx-auto">
+          <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
+            <div className="space-y-2">
+              <Skeleton className="h-7 w-32" />
+              <Skeleton className="h-3 w-24" />
+            </div>
+            <div className="space-y-2 items-end flex flex-col">
+              <Skeleton className="h-7 w-28" />
+              <Skeleton className="h-3 w-20" />
+            </div>
+          </div>
+          <SkeletonCard rows={4} className="mb-6" />
+          <SkeletonCard rows={2} className="mb-6" />
+          <SkeletonCard rows={3} className="mb-6" />
+        </div>
       </div>
     );
   }
@@ -477,6 +494,13 @@ export default function AnalysisPage() {
           </div>
         )}
 
+        {/* Earnings calendar — equity-only, same reasoning as fundamentals above */}
+        {!stock.isEtf && (
+          <div className="mb-6">
+            <EarningsCalendar symbol={sym} />
+          </div>
+        )}
+
         {/* Tabs */}
         <div className="flex flex-wrap gap-1 mb-4 bg-slate-800/60 border border-slate-700 rounded-xl p-1">
           {tabs.map((t) => (
@@ -493,7 +517,9 @@ export default function AnalysisPage() {
         </div>
 
         <Card>
-          {activeTabMetrics.length > 0 ? (
+          {tab === 'insider' && !stock.isEtf ? (
+            <InsiderActivity symbol={sym} />
+          ) : activeTabMetrics.length > 0 ? (
             activeTabMetrics.map((metric, i) => (
               <MetricRow key={i} label={metric?.label || ''} value={metric?.value ?? 'N/A'} good={Boolean(metric?.good)} />
             ))

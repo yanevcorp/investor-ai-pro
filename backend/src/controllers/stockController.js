@@ -591,6 +591,52 @@ async function getStockHistory(req, res, next) {
   }
 }
 
+// Candlestick OHLC data — a separate endpoint from getStockHistory (which
+// is close-only) so the candlestick chart doesn't require any change to
+// the existing close-only history payload or its consumers (sparklines,
+// drawdown, ExpandedChartModal, etc.). No Mongo lookup, same as
+// getStockQuote below — this is a direct, symbol-keyed FMP passthrough.
+async function getStockOhlc(req, res, next) {
+  try {
+    const symbol = req.params.symbol.toUpperCase();
+    const range = typeof req.query.range === 'string' ? req.query.range.toUpperCase() : '1Y';
+
+    if (range === '1D') {
+      const candles = await fmpService.getIntradayChart(symbol).catch(() => []);
+      return res.json({ symbol, range: '1D', candles });
+    }
+
+    const fullOhlc = await fmpService.getDailyOhlc(symbol).catch(() => []);
+    const candles = sliceRange(fullOhlc, range);
+    res.json({ symbol, range, candles });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Best-effort, like every other FMP-sourced enrichment in this app — a
+// failure here renders as an empty section on the frontend instead of
+// breaking the page (200 with empty data, not a 500).
+async function getStockEarnings(req, res) {
+  const symbol = req.params.symbol.toUpperCase();
+  try {
+    const earnings = await fmpService.getEarningsCalendar(symbol);
+    res.json({ symbol, ...earnings });
+  } catch (err) {
+    res.json({ symbol, next: null, history: [] });
+  }
+}
+
+async function getStockInsider(req, res) {
+  const symbol = req.params.symbol.toUpperCase();
+  try {
+    const transactions = await finnhubService.getInsiderTransactions(symbol);
+    res.json({ symbol, transactions });
+  } catch (err) {
+    res.json({ symbol, transactions: [] });
+  }
+}
+
 module.exports = {
   listStocks,
   getStock,
@@ -598,5 +644,8 @@ module.exports = {
   searchStocks,
   aiSearchStocks,
   getStockHistory,
+  getStockOhlc,
+  getStockEarnings,
+  getStockInsider,
   provisionStock,
 };

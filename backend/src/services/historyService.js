@@ -44,7 +44,9 @@ async function getOrFetchHistory(stockDoc) {
 }
 
 const RANGE_DAYS = {
+  '1W': 7,
   '1M': 30,
+  '3M': 91,
   '6M': 182,
   '1Y': 365,
   '3Y': 365 * 3,

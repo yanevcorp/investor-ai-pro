@@ -99,6 +99,57 @@ async function getRecommendationTrends(symbol) {
   return result;
 }
 
+// Insider trading, via Finnhub instead of FMP — FMP's /insider-trading
+// endpoint returned 402 "Restricted Endpoint" on this app's subscription
+// (confirmed live), while Finnhub's equivalent is available and SEC-Form-4
+// sourced. No title/role field is present in this response (checked
+// live), so that detail is left out rather than guessed.
+const SEC_BUY_CODES = new Set(['P']);
+const SEC_SELL_CODES = new Set(['S']);
+const SEC_CODE_LABELS = {
+  A: 'Награда/Grant',
+  G: 'Дарение',
+  M: 'Упражняване на опция',
+  F: 'Данъчно удържане',
+  D: 'Прехвърляне към емитента',
+};
+
+async function getInsiderTransactions(symbol) {
+  const cacheKey = `finnhub:insider:${symbol}`;
+  const cached = cache.get(cacheKey);
+  if (cached) return cached;
+
+  const { data } = await axios.get(`${BASE_URL}/stock/insider-transactions`, {
+    params: { symbol, token: process.env.FINNHUB_API_KEY },
+    timeout: 5000,
+  });
+
+  const rows = Array.isArray(data?.data) ? data.data : [];
+
+  const transactions = rows
+    .slice()
+    .sort((a, b) => (b.transactionDate || '').localeCompare(a.transactionDate || ''))
+    .slice(0, 10)
+    .map((r) => {
+      const shares = Math.abs(r.change || 0);
+      const price = r.transactionPrice || 0;
+      const isBuy = SEC_BUY_CODES.has(r.transactionCode);
+      const isSell = SEC_SELL_CODES.has(r.transactionCode);
+      return {
+        name: r.name || '',
+        transactionType: isBuy ? 'buy' : isSell ? 'sell' : 'other',
+        transactionLabel: isBuy ? 'Покупка' : isSell ? 'Продажба' : SEC_CODE_LABELS[r.transactionCode] || r.transactionCode || '—',
+        shares,
+        price,
+        totalValue: shares * price,
+        date: r.transactionDate || r.filingDate || null,
+      };
+    });
+
+  cache.set(cacheKey, transactions, PROFILE_TTL_MS);
+  return transactions;
+}
+
 async function searchSymbols(query) {
   const cacheKey = `finnhub:search:${query.toLowerCase()}`;
   const cached = cache.get(cacheKey);
@@ -114,4 +165,4 @@ async function searchSymbols(query) {
   return results;
 }
 
-module.exports = { getQuote, getProfile, searchSymbols, getRecommendationTrends };
+module.exports = { getQuote, getProfile, searchSymbols, getRecommendationTrends, getInsiderTransactions };

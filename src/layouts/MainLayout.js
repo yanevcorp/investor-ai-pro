@@ -13,9 +13,13 @@ export default function MainLayout() {
       <InstallBanner />
       <div className="pb-16 md:pb-0">
         {/* Keyed on the path so navigating away from a crashed page mounts
-            a fresh boundary instead of getting stuck on the fallback. */}
+            a fresh boundary instead of getting stuck on the fallback —
+            the same key also remounts the fade-in wrapper below, so every
+            route change replays the transition. */}
         <ErrorBoundary key={location.pathname}>
-          <Outlet />
+          <div key={location.pathname} className="animate-page-in">
+            <Outlet />
+          </div>
         </ErrorBoundary>
       </div>
       <BottomNav />
