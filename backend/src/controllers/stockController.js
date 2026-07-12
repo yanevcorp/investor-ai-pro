@@ -6,8 +6,11 @@ const groqService = require('../services/groqService');
 const { buildGenericAnalysis } = require('../utils/buildAnalysis');
 const { isEtfSymbol } = require('../utils/etf');
 const { getMarketSession } = require('../utils/marketSession');
-const { getOrFetchHistory } = require('../services/historyService');
+const { getOrFetchHistory, sliceRange } = require('../services/historyService');
+const { getOrFetchFinancialsHistory } = require('../services/financialsHistoryService');
 const { sparklineFrom, maxDrawdownPercent } = require('../utils/portfolioRisk');
+const { avNumber } = require('../utils/numbers');
+const { buildValuationScores } = require('../utils/buildValuationScores');
 
 // Finnhub's /search endpoint doesn't return an exchange field, but foreign
 // listings carry a dot-suffix on the symbol (e.g. "2788.T", "603020.SS")
@@ -37,12 +40,6 @@ function exchangeFromSymbol(symbol) {
   if (parts.length < 2) return 'US';
   const suffix = parts[parts.length - 1].toUpperCase();
   return EXCHANGE_SUFFIXES[suffix] || suffix;
-}
-
-function avNumber(value) {
-  if (value === undefined || value === null || value === 'None' || value === '-') return null;
-  const n = Number(value);
-  return Number.isNaN(n) ? null : n;
 }
 
 function formatMoney(n) {
@@ -154,6 +151,27 @@ async function getFundamentals(stock, isEtf) {
     return fundamentals;
   } catch (err) {
     return null;
+  }
+}
+
+const ANALYST_RATINGS_TTL_MS = 24 * 60 * 60 * 1000;
+
+async function getOrFetchAnalystRatings(stock) {
+  const isFresh =
+    stock.analystRatings &&
+    stock.analystRatingsFetchedAt &&
+    Date.now() - new Date(stock.analystRatingsFetchedAt).getTime() < ANALYST_RATINGS_TTL_MS;
+  if (isFresh) return stock.analystRatings;
+
+  try {
+    const trends = await finnhubService.getRecommendationTrends(stock.symbol);
+    stock.analystRatings = trends;
+    stock.analystRatingsFetchedAt = new Date();
+    await stock.save();
+    return trends;
+  } catch (err) {
+    // Rate-limited/unavailable — fall back to whatever's cached, even if stale.
+    return stock.analystRatings || null;
   }
 }
 
@@ -334,6 +352,25 @@ async function getStock(req, res, next) {
       obj.analysis.news = [];
     }
 
+    // ETFs don't file income statements/balance sheets — this section is
+    // equity-only (see financialsHistoryService).
+    if (!isEtf) {
+      try {
+        const priceHistory = await getOrFetchHistory(stock);
+        obj.financialsHistory = await getOrFetchFinancialsHistory(stock, priceHistory);
+      } catch (err) {
+        obj.financialsHistory = null;
+      }
+    }
+
+    try {
+      obj.analystRatings = await getOrFetchAnalystRatings(stock);
+    } catch (err) {
+      obj.analystRatings = null;
+    }
+
+    obj.valuationScores = buildValuationScores(obj, fundamentals);
+
     res.json({ stock: obj });
   } catch (err) {
     next(err);
@@ -486,12 +523,20 @@ async function getStockHistory(req, res, next) {
       }
     }
 
-    const history = await getOrFetchHistory(stock);
+    const fullHistory = await getOrFetchHistory(stock);
+    // range is optional — omitted for existing callers (RiskGrid, the
+    // Watchlist/Portfolio expanded chart, alerts), which expect "the
+    // available period" to mean a recent window (see historyService's
+    // sliceRange default). AnalysisPage's timeframe buttons pass one of
+    // 1M/YTD/1Y/3Y/5Y/20Y explicitly.
+    const range = typeof req.query.range === 'string' ? req.query.range.toUpperCase() : undefined;
+    const rangedHistory = sliceRange(fullHistory, range);
     res.json({
       symbol,
-      sparkline: sparklineFrom(history, 7),
-      history,
-      drawdownPercent: maxDrawdownPercent(history),
+      range: range || '1Y',
+      sparkline: sparklineFrom(fullHistory, 7),
+      history: rangedHistory,
+      drawdownPercent: maxDrawdownPercent(rangedHistory),
     });
   } catch (err) {
     next(err);

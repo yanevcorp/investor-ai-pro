@@ -15,6 +15,14 @@ function renderAnalysisPage(symbol) {
   );
 }
 
+beforeEach(() => {
+  // PriceChart fetches its own price-history endpoint independently of the
+  // main stock fetch each test configures below — this is the fallback
+  // every `api.get` call beyond the first (queued via mockResolvedValueOnce)
+  // falls through to, so PriceChart doesn't call `.then()` on `undefined`.
+  api.get.mockResolvedValue({ data: { history: [] } });
+});
+
 afterEach(() => {
   jest.resetAllMocks();
 });

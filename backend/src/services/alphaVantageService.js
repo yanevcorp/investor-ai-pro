@@ -73,4 +73,91 @@ async function getDailyHistory(symbol) {
   return history;
 }
 
-module.exports = { getOverview, getEtfProfile, getDailyHistory };
+// getIncomeStatement/getBalanceSheet/getCashFlow/getEarnings share this
+// shape: annual reports going back as far as Alpha Vantage has them
+// (typically 10-20+ years for established companies), keyed off
+// annualReports/annualEarnings. Same free-tier quota (25 req/day) and
+// "cache forever, refetch only if explicitly asked" philosophy as
+// getOverview — a full financials history for one symbol costs 4 of these
+// calls, so permanent caching matters even more here.
+async function getIncomeStatement(symbol) {
+  const cacheKey = `alphavantage:income:${symbol}`;
+  const cached = cache.get(cacheKey);
+  if (cached) return cached;
+
+  const { data } = await axios.get(BASE_URL, {
+    params: { function: 'INCOME_STATEMENT', symbol, apikey: process.env.ALPHA_VANTAGE_API_KEY },
+    timeout: 8000,
+  });
+
+  if (!data || !Array.isArray(data.annualReports)) {
+    throw new Error(`No Alpha Vantage income statement for ${symbol}: ${data?.Note || data?.Information || 'empty response'}`);
+  }
+
+  cache.set(cacheKey, data, OVERVIEW_TTL_MS);
+  return data;
+}
+
+async function getBalanceSheet(symbol) {
+  const cacheKey = `alphavantage:balance:${symbol}`;
+  const cached = cache.get(cacheKey);
+  if (cached) return cached;
+
+  const { data } = await axios.get(BASE_URL, {
+    params: { function: 'BALANCE_SHEET', symbol, apikey: process.env.ALPHA_VANTAGE_API_KEY },
+    timeout: 8000,
+  });
+
+  if (!data || !Array.isArray(data.annualReports)) {
+    throw new Error(`No Alpha Vantage balance sheet for ${symbol}: ${data?.Note || data?.Information || 'empty response'}`);
+  }
+
+  cache.set(cacheKey, data, OVERVIEW_TTL_MS);
+  return data;
+}
+
+async function getCashFlow(symbol) {
+  const cacheKey = `alphavantage:cashflow:${symbol}`;
+  const cached = cache.get(cacheKey);
+  if (cached) return cached;
+
+  const { data } = await axios.get(BASE_URL, {
+    params: { function: 'CASH_FLOW', symbol, apikey: process.env.ALPHA_VANTAGE_API_KEY },
+    timeout: 8000,
+  });
+
+  if (!data || !Array.isArray(data.annualReports)) {
+    throw new Error(`No Alpha Vantage cash flow for ${symbol}: ${data?.Note || data?.Information || 'empty response'}`);
+  }
+
+  cache.set(cacheKey, data, OVERVIEW_TTL_MS);
+  return data;
+}
+
+async function getEarnings(symbol) {
+  const cacheKey = `alphavantage:earnings:${symbol}`;
+  const cached = cache.get(cacheKey);
+  if (cached) return cached;
+
+  const { data } = await axios.get(BASE_URL, {
+    params: { function: 'EARNINGS', symbol, apikey: process.env.ALPHA_VANTAGE_API_KEY },
+    timeout: 8000,
+  });
+
+  if (!data || !Array.isArray(data.annualEarnings)) {
+    throw new Error(`No Alpha Vantage earnings for ${symbol}: ${data?.Note || data?.Information || 'empty response'}`);
+  }
+
+  cache.set(cacheKey, data, OVERVIEW_TTL_MS);
+  return data;
+}
+
+module.exports = {
+  getOverview,
+  getEtfProfile,
+  getDailyHistory,
+  getIncomeStatement,
+  getBalanceSheet,
+  getCashFlow,
+  getEarnings,
+};

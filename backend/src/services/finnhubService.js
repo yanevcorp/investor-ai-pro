@@ -5,6 +5,7 @@ const BASE_URL = 'https://finnhub.io/api/v1';
 const QUOTE_TTL_MS = 30 * 1000;
 const PROFILE_TTL_MS = 24 * 60 * 60 * 1000;
 const SEARCH_TTL_MS = 5 * 60 * 1000;
+const RECOMMENDATION_TTL_MS = 24 * 60 * 60 * 1000;
 
 async function getQuote(symbol) {
   const cacheKey = `finnhub:quote:${symbol}`;
@@ -80,4 +81,37 @@ async function searchSymbols(query) {
   return results;
 }
 
-module.exports = { getQuote, getProfile, searchSymbols };
+// /stock/price-target (High/Avg/Low, % upside) returns 403 on the free
+// tier — only recommendation trends (Strong Buy/Buy/Hold/Sell/Strong Sell
+// counts) are actually available for free, so that's all this exposes.
+async function getRecommendationTrends(symbol) {
+  const cacheKey = `finnhub:recommendation:${symbol}`;
+  const cached = cache.get(cacheKey);
+  if (cached) return cached;
+
+  const { data } = await axios.get(`${BASE_URL}/stock/recommendation`, {
+    params: { symbol, token: process.env.FINNHUB_API_KEY },
+    timeout: 5000,
+  });
+
+  if (!Array.isArray(data) || data.length === 0) {
+    throw new Error(`No Finnhub recommendation trends for ${symbol}`);
+  }
+
+  // Finnhub returns periods newest-first.
+  const latest = data[0];
+  const trends = {
+    period: latest.period,
+    strongBuy: latest.strongBuy || 0,
+    buy: latest.buy || 0,
+    hold: latest.hold || 0,
+    sell: latest.sell || 0,
+    strongSell: latest.strongSell || 0,
+  };
+  trends.totalAnalysts = trends.strongBuy + trends.buy + trends.hold + trends.sell + trends.strongSell;
+
+  cache.set(cacheKey, trends, RECOMMENDATION_TTL_MS);
+  return trends;
+}
+
+module.exports = { getQuote, getProfile, searchSymbols, getRecommendationTrends };

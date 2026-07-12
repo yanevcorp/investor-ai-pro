@@ -7,6 +7,10 @@ import { timeAgo } from '../utils/time';
 import { Card, VerdictBadge, MetricRow, toRenderable } from '../components/ui';
 import ErrorBoundary from '../components/ErrorBoundary';
 import SimulatorModal from '../components/SimulatorModal';
+import PriceChart from '../components/PriceChart';
+import FundamentalsCharts from '../components/FundamentalsCharts';
+import AnalystRatings from '../components/AnalystRatings';
+import ValuationScores from '../components/ValuationScores';
 import useLiveQuotes from '../hooks/useLiveQuotes';
 import useFlashOnChange from '../hooks/useFlashOnChange';
 
@@ -36,6 +40,9 @@ const MARKET_SESSION_LABELS = {
 };
 
 function toFiniteNumber(value) {
+  // Number(null) is 0, not NaN — without this guard a missing price/change
+  // silently rendered as "$0.00" instead of "N/A".
+  if (value === null || value === undefined) return null;
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
 }
@@ -319,6 +326,11 @@ export default function AnalysisPage() {
           </div>
         </div>
 
+        {/* Price chart */}
+        <Card className="mb-6">
+          <PriceChart symbol={sym} currentPrice={currentPrice} />
+        </Card>
+
         {/* Watchlist / Portfolio actions */}
         <Card className="mb-6">
           <div className="flex flex-wrap items-center gap-3">
@@ -379,6 +391,19 @@ export default function AnalysisPage() {
           </Card>
         )}
 
+        {/* Valuation scores */}
+        {stock.valuationScores && (
+          <div className="mb-6">
+            <h2 className="text-lg font-semibold text-white mb-4">Оценъчни показатели</h2>
+            <ValuationScores valuationScores={stock.valuationScores} />
+          </div>
+        )}
+
+        {/* Analyst ratings */}
+        <div className="mb-6">
+          <AnalystRatings analystRatings={stock.analystRatings} />
+        </div>
+
         {/* Probability chart */}
         <Card className="mb-6">
           <h2 className="text-lg font-semibold text-white mb-4">Вероятност за посока на цената</h2>
@@ -416,6 +441,14 @@ export default function AnalysisPage() {
             </div>
           </ErrorBoundary>
         </Card>
+
+        {/* Fundamentals — equity-only, no income statement/balance sheet for ETFs */}
+        {!stock.isEtf && (
+          <div className="mb-6">
+            <h2 className="text-lg font-semibold text-white mb-4">Фундаментален анализ</h2>
+            <FundamentalsCharts financialsHistory={stock.financialsHistory} />
+          </div>
+        )}
 
         {/* Tabs */}
         <div className="flex flex-wrap gap-1 mb-4 bg-slate-800/60 border border-slate-700 rounded-xl p-1">

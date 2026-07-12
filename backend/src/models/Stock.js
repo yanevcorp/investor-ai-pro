@@ -38,6 +38,19 @@ const stockSchema = new mongoose.Schema(
       default: [],
     },
     priceHistoryFetchedAt: { type: Date, default: null },
+    // Revenue/margins/debt-vs-cash/EPS/P/E history built from Alpha
+    // Vantage's income statement, balance sheet, cash flow, and earnings
+    // endpoints (see financialsHistoryService). Cached permanently like
+    // `fundamentals` — same 25-req/day quota reasoning, and this costs 4
+    // of those requests per symbol instead of 1.
+    financialsHistory: { type: mongoose.Schema.Types.Mixed, default: null },
+    financialsHistoryFetchedAt: { type: Date, default: null },
+    // Finnhub analyst recommendation trends (Strong Buy/Buy/Hold/Sell/
+    // Strong Sell counts for the latest period). Short TTL, not permanent
+    // — analyst sentiment changes and Finnhub's free tier isn't as
+    // quota-constrained as Alpha Vantage's.
+    analystRatings: { type: mongoose.Schema.Types.Mixed, default: null },
+    analystRatingsFetchedAt: { type: Date, default: null },
   },
   { timestamps: true }
 );
